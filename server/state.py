@@ -286,15 +286,18 @@ class Evening:
 
     def players_changed(self) -> None:
         self.emit({"host", "tv"}, {"t": "players", "players": self.players_public(with_scores=True)})
+        self.emit("carve", {"t": "players", "players": self.players_public(with_scores=False)})
         self.emit("player", {"t": "avatars_taken", "taken": self.taken_avatars()})
 
     def players_public(self, with_scores: bool) -> list[dict]:
         totals = self.totals() if with_scores else {}
+        pumpkins = {r["player_id"]: r["version"] for r in self.db.all("SELECT player_id, version FROM pumpkins")}
         out = []
         for p in self.players.values():
             d = {
                 "id": p.id, "name": p.name, "avatar_url": p.avatar_url, "avatar_kind": p.avatar_kind,
                 "is_host": p.is_host, "in_scoring": p.in_scoring, "connected": p.connected,
+                "pumpkin_version": pumpkins.get(p.id, 0),
             }
             if with_scores:
                 d["score"] = totals.get(p.id, 0)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import logging.handlers
 import os
@@ -14,7 +15,7 @@ from fastapi import FastAPI, File, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import assets, images, qr, webcam
+from . import assets, carve, images, qr, webcam
 from .backup import make_backup
 from .checks import INFO, OK, FAIL, WARN, static_checks
 from .clock import Clock
@@ -143,6 +144,15 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         (ROOT / "content" / sub).mkdir(parents=True, exist_ok=True)
         app.mount(f"/content/{sub}", StaticFiles(directory=ROOT / "content" / sub), name=f"content-{sub}")
 
+    @app.get("/media/pumpkins/{pid}/{name}")
+    async def pumpkin_media(pid: int, name: str):
+        if name not in carve.FILES:
+            return Response(status_code=404)
+        p = carve.pumpkin_dir(ev, pid) / name
+        if not p.exists():
+            return Response(status_code=404)
+        return FileResponse(p, headers={"Cache-Control": "no-cache"})
+
     @app.get("/media/{kind}/{name}")
     async def media(kind: str, name: str):
         if kind not in ("avatars", "uploads") or not MEDIA_RE.match(name):
@@ -237,6 +247,32 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         except CmdError as e:
             return err(e)
         return {"ok": True, "token": p.token, "me": ev.me(p.id)}
+
+    @app.get("/api/pumpkin/{pid}")
+    async def pumpkin_get(pid: int):
+        if pid not in ev.players:
+            return err(CmdError("Нет такого игрока", "not_found"), 404)
+        return carve.info(ev, pid)
+
+    @app.post("/api/pumpkin/{pid}")
+    async def pumpkin_save(pid: int, request: Request):
+        form = await request.form(max_part_size=carve.SHOT_MAX_BYTES * 2)
+        files: dict[str, bytes] = {}
+        for name in carve.FILES:
+            f = form.get(name)
+            if f is not None and hasattr(f, "read"):
+                files[name] = await f.read()
+        try:
+            camera = json.loads(str(form.get("camera", "{}")))
+        except ValueError:
+            camera = {}
+        loop = asyncio.get_running_loop()
+        try:
+            # обработка картинок в потоке, запись в базу — в цикле событий
+            checked = await loop.run_in_executor(None, carve.prepare, ev, pid, files, camera)
+            return carve.commit(ev, pid, checked)
+        except CmdError as e:
+            return err(e, 404 if e.code == "not_found" else 409 if e.code == "locked" else 400)
 
     @app.get("/api/check")
     async def check():

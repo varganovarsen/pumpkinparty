@@ -22,8 +22,12 @@
 - Симулятор: `python tools/simulator.py --players 8 --speed 30 --scenario evening`.
 - Контент: `python tools/check_content.py`.
 - Заглушки ассетов: `python tools/make_stubs.py` (нужен ffmpeg).
+- Модель тыквы из glTF: `python tools/pack_model.py <папка со scene.gltf>` → `assets/carve/pumpkin.glb`.
+- Сторонние материалы и лицензии: [`docs/CREDITS.md`](docs/CREDITS.md).
 - Протокол: [`docs/PROTOCOL.md`](docs/PROTOCOL.md), решения: [`docs/DECISIONS.md`](docs/DECISIONS.md), чек-лист вечера: [`docs/CHECKLIST.md`](docs/CHECKLIST.md).
 
 ## Состояние
 
-Этап 1 (ядро, модули 01 и 08) готов. Дальше: прототип резьбы (модуль 06).
+- Этап 1 (ядро, модули 01 и 08) готов.
+- Этап 2: прототип резьбы на `/carve` готов, ждёт проверки на iPad (решение «идём / не идём», см. `docs/DECISIONS.md`).
+- Дальше: квиз (модуль 02).

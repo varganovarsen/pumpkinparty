@@ -15,6 +15,8 @@
 | `POST /api/claim` | `{name}` | «Это я?»: `{ok, token, me}`, только если игрок не в сети |
 | `GET /api/check` | — | `{items:[{id,title,status: ok\|warn\|fail\|info, detail, items}], summary}` |
 | `GET /api/webcam_test` | — | JPEG или 503 `{error}` |
+| `GET /api/pumpkin/{player_id}` | — | `{exists, version, camera:{theta,phi,radius}, mask_size, masks:{through,depth}, shots:{lit,dark,side}}` (URL с `?v=версия`) |
+| `POST /api/pumpkin/{player_id}` | multipart: `through.png`, `depth.png` (маски развёртки, квадрат, одинаковый размер), `lit.jpg`, `dark.jpg`, `side.jpg`, `camera` (JSON) | то же, что GET, + `ok`; ошибки `bad_mask`, `bad_shot`, `bad_request`, `not_found`, `locked` (идёт голосование) |
 
 Коды ошибок входа: `bad_name`, `name_taken`, `avatar_taken`, `bad_avatar`, `host_exists`, `not_found`.
 
@@ -43,11 +45,17 @@
 | player | `me`, `facts`, `avatars_taken` |
 | tv | `players`, `head`, `stubs` (список путей-заглушек) |
 | host | `players`, `log` (50 строк), `scenes`, `next_step`, `tv_count` |
-| carve | `players` (без очков) |
+| carve | `players` (без очков, с `pumpkin_version`: 0 — тыквы нет) |
 
 `scene = {scene, payload, started_at, participating, title}`.
 `me = {id, name, avatar_url, avatar_kind, avatar_ref, is_host, in_scoring, score}` (`score = null`, если общий рейтинг скрыт).
-`players[] = {id, name, avatar_url, avatar_kind, is_host, in_scoring, connected, score}`.
+`players[] = {id, name, avatar_url, avatar_kind, is_host, in_scoring, connected, pumpkin_version, score}`.
+
+### Маски тыквы
+
+Квадратные PNG 8 бит (по умолчанию 2048×2048) в развёртке модели: верхняя строка картинки = `v = 0`
+(как текстуры glTF, загружаются с `flipY = false`). `through`: 255 — вырезано насквозь. `depth`: 0-255 — глубина
+декора (одна глубина, 255). Файлы лежат в `data/pumpkins/<player_id>/`, хранится только последняя версия.
 `facts[] = {n, text|null}` (`null` — ещё не показан).
 
 Повторная доставка безопасна: снимок полностью заменяет состояние клиента.
@@ -58,7 +66,7 @@
 |---|---|---|
 | `scene` | все | как `scene` в снимке |
 | `settings` | все | `settings` |
-| `players` | tv, host | `players` |
+| `players` | tv, host, carve | `players` (carve — без очков) |
 | `me` | конкретный player | `me` |
 | `avatars_taken` | player | `taken` |
 | `facts` | player | `facts` |

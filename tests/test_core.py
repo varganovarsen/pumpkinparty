@@ -213,3 +213,60 @@ def test_content_checker_flags_problems(tmp_path):
     assert "ровно 4 варианта" in text and "correct" in text
     assert any("quiz" in w for w in warnings)
     errors, _ = check(ROOT / "content")  # пример контента читается без падений
+
+
+def _png(size=256, value=0):
+    buf = io.BytesIO()
+    Image.new("L", (size, size), value).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _jpg():
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), (200, 100, 0)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+def _pumpkin_files(through=_png, size=256):
+    return {
+        "through.png": ("t.png", through(size, 255), "image/png"),
+        "depth.png": ("d.png", _png(size, 10), "image/png"),
+        "lit.jpg": ("a.jpg", _jpg(), "image/jpeg"),
+        "dark.jpg": ("b.jpg", _jpg(), "image/jpeg"),
+        "side.jpg": ("c.jpg", _jpg(), "image/jpeg"),
+    }
+
+
+def test_pumpkin_save_and_load(client, data_dir):
+    import json
+    pid = join(client, "Аня").json()["me"]["id"]
+    assert client.get(f"/api/pumpkin/{pid}").json()["exists"] is False
+    cam = json.dumps({"theta": 0.3, "phi": 1.2, "radius": 4})
+    r = client.post(f"/api/pumpkin/{pid}", files=_pumpkin_files(), data={"camera": cam}).json()
+    assert r["ok"] and r["version"] == 1 and r["camera"]["theta"] == 0.3
+    r = client.post(f"/api/pumpkin/{pid}", files=_pumpkin_files(), data={"camera": cam}).json()
+    assert r["version"] == 2
+    got = client.get(f"/api/pumpkin/{pid}").json()
+    t = Image.open(io.BytesIO(client.get(got["masks"]["through"]).content))
+    assert t.mode == "L" and t.size == (256, 256) and t.getpixel((0, 0)) == 255
+    assert client.get(got["shots"]["side"]).status_code == 200
+    assert sorted(p.name for p in (data_dir / "pumpkins").iterdir()) == [str(pid)]  # только последняя версия
+    with client.websocket_connect("/ws?role=carve") as ws:
+        snap = recv_until(ws, "snapshot")
+        assert snap["players"][0]["pumpkin_version"] == 2
+
+
+def test_pumpkin_rejects_bad_input(client):
+    import json
+    pid = join(client, "Аня").json()["me"]["id"]
+    cam = json.dumps({"theta": 0, "phi": 1, "radius": 4})
+    files = _pumpkin_files()
+    files["depth.png"] = ("d.png", _png(128), "image/png")
+    assert client.post(f"/api/pumpkin/{pid}", files=files, data={"camera": cam}).json()["code"] == "bad_mask"
+    files = _pumpkin_files()
+    del files["side.jpg"]
+    assert client.post(f"/api/pumpkin/{pid}", files=files, data={"camera": cam}).status_code == 400
+    assert client.post(f"/api/pumpkin/{pid}", files=_pumpkin_files(), data={"camera": "{}"}).status_code == 400
+    assert client.post("/api/pumpkin/999", files=_pumpkin_files(), data={"camera": cam}).status_code == 404
+    client.app.state.ev.settings["carve_locked"] = True
+    assert client.post(f"/api/pumpkin/{pid}", files=_pumpkin_files(), data={"camera": cam}).json()["code"] == "locked"

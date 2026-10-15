@@ -2,29 +2,67 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#17110d">
 <title>Резьба — Тыквенный спас</title>
 <link rel="stylesheet" href="/web/shared/ui.css">
+<link rel="stylesheet" href="/web/carve/carve.css">
+<script type="importmap">
+{ "imports": { "three": "/web/vendor/three/three.module.min.js", "three/addons/": "/web/vendor/three/addons/" } }
+</script>
 </head>
 <body>
-<main style="max-width:640px;margin:20vh auto;text-align:center;padding:0 16px">
-  <h1>🎃 Резьба тыквы</h1>
-  <p class="muted">Здесь будет 3D-тыква и ножи (прототип — этап 2, модуль 06).</p>
-  <p id="scene" class="muted"></p>
-</main>
-<script type="module">
-  import { Link } from '/web/shared/ws.js';
-  import { offlineBar } from '/web/shared/util.js';
-  const out = document.getElementById('scene');
-  const link = new Link({
-    role: 'carve',
-    onStatus: offlineBar,
-    onMessage: (m) => {
-      if (m.t === 'snapshot') out.textContent = `Игроков: ${m.players.length}. Сцена на ТВ: ${m.scene.title}`;
-      if (m.t === 'scene') out.textContent = `Сцена на ТВ: ${m.title}`;
-    },
-  });
-  link.connect();
-</script>
+<section id="picker" class="picker">
+  <h1>🎃 Кто режет тыкву?</h1>
+  <p class="muted">Выбери себя. Тыкву можно переделывать сколько угодно до голосования.</p>
+  <div id="players" class="players"></div>
+  <p class="credit muted">3D-модель: «Pumpkin», автор Batuhan13 (sketchfab.com/Batuhan13), лицензия CC BY 4.0</p>
+</section>
+
+<section id="editor" class="editor hidden">
+  <canvas id="gl"></canvas>
+  <canvas id="draw"></canvas>
+  <header class="ebar">
+    <button id="back" class="small">← Игроки</button>
+    <img id="who-avatar" class="avatar" alt="">
+    <b id="who-name"></b>
+    <span id="fps" class="muted hidden"></span>
+    <button id="done" class="primary">Готово</button>
+  </header>
+  <nav class="tools">
+    <button data-knife="lasso" title="Насквозь: обвести пальцем или пером">✂️<span>Лассо</span></button>
+    <button data-knife="poly" title="Насквозь: тапы ставят точки, двойной тап замыкает">⬠<span>Полигон</span></button>
+    <button data-knife="decor" title="Декор: снять кожицу, не насквозь">〰️<span>Декор</span></button>
+    <div id="sizes" class="sizes hidden">
+      <button data-size="s">S</button><button data-size="m">M</button><button data-size="l">L</button>
+    </div>
+    <hr>
+    <div id="mode" class="mode">
+      <button data-mode="rotate">✋<span>Вращать</span></button>
+      <button data-mode="cut">✂️<span>Резать</span></button>
+    </div>
+    <div id="pen-note" class="pen-note hidden">✏️ Перо режет,<br>палец вращает<br><button id="no-pen" class="small">без пера</button></div>
+    <hr>
+    <button id="undo">↶<span>Отменить</span></button>
+    <button id="restart">🗑<span>Заново</span></button>
+    <button id="candle">🕯<span>Свеча</span></button>
+  </nav>
+  <div id="contour" class="contour hidden">
+    <span id="contour-hint" class="muted"></span>
+    <button id="close-poly" class="hidden">Замкнуть</button>
+    <button id="cut" class="primary hidden">Вырезать</button>
+    <button id="cancel-contour">Отмена</button>
+  </div>
+  <div id="preview" class="preview hidden">
+    <p>Так тыква будет выглядеть в аллее</p>
+    <div class="row">
+      <button id="preview-back">← Ещё порезать</button>
+      <button id="save" class="primary">Сохранить</button>
+    </div>
+  </div>
+  <div id="busy" class="busy hidden"><div id="busy-text">Загрузка…</div></div>
+</section>
+<script type="module" src="/web/carve/carve.js"></script>
 </body>
 </html>
