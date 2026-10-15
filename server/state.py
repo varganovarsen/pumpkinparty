@@ -42,8 +42,8 @@ SCENE_TITLES = {
 # Сцены с участием: телефон уходит в полноэкранный режим без вкладок.
 PARTICIPATING = {"quiz", "game", "carve_vote"}
 # Сцены с живой фазой: уход из них требует подтверждения на /host.
-# На этапе 1 живой считается вся сцена; модули 02/05/06 уточнят по фазе.
-LIVE = {"quiz", "game", "carve_vote"}
+# Квиз живой только во время вопроса и вердиктов; игра и голосование пока целиком (модули 05/06).
+LIVE = {"game", "carve_vote"}
 # Рекомендуемый порядок вечера (подсказка «Следующий шаг», SPEC 8).
 RECOMMENDED = [
     "ambient", "quiz", "timer", "game", "carve_vote", "carve_reveal",
@@ -107,6 +107,9 @@ class Evening:
         self.assets_dir = cfg.root / "assets"
         self.data_dir = cfg.data_dir
         self._load()
+        from .quiz import Quiz  # здесь, чтобы не было циклического импорта
+
+        self.quiz = Quiz(self)
 
     # ------------------------------------------------------------------ загрузка
     def _defaults(self) -> dict:
@@ -169,14 +172,16 @@ class Evening:
         return [dict(r) for r in reversed(rows)]
 
     # ------------------------------------------------------------------ очки (ledger)
-    def add_points(self, player_id: int, source: str, amount: int, ref: str = "", note: str = "") -> None:
+    def add_points(self, player_id: int, source: str, amount: int, ref: str = "", note: str = "",
+                   notify: bool = True) -> None:
         if source not in LEDGER_SOURCES:
             raise ValueError(source)
         self.db.execute(
             "INSERT INTO ledger(player_id, source, ref, amount, note, ts) VALUES(?, ?, ?, ?, ?, ?)",
             (player_id, source, ref, int(amount), note, self.clock.now()),
         )
-        self._scores_changed({player_id})
+        if notify:
+            self.scores_changed({player_id})
 
     def totals(self) -> dict[int, int]:
         rows = self.db.all("SELECT player_id, COALESCE(SUM(amount), 0) AS s FROM ledger GROUP BY player_id")
@@ -194,7 +199,7 @@ class Evening:
         r = self.db.one("SELECT COALESCE(SUM(amount), 0) AS s FROM ledger WHERE player_id=?", (player_id,))
         return int(r["s"])
 
-    def _scores_changed(self, ids: set[int]) -> None:
+    def scores_changed(self, ids: set[int]) -> None:
         self.emit({"host", "tv"}, {"t": "players", "players": self.players_public(with_scores=True)})
         for pid in ids:
             if pid in self.players:
@@ -317,7 +322,7 @@ class Evening:
         if scene not in SCENES:
             raise CmdError("Неизвестная сцена", "bad_scene")
         cur = self.settings["scene"]
-        if cur in LIVE and scene != cur and not force:
+        if self.scene_is_live(cur) and scene != cur and not force:
             raise CmdError(
                 f"Сейчас идёт «{SCENE_TITLES[cur]}». Точно выйти?", "confirm_required"
             )
@@ -332,7 +337,10 @@ class Evening:
         self._set("scene_started_at", now)
         self.log(f"Сцена: {SCENE_TITLES[scene]}")
         self.emit({"tv", "host", "player", "carve"}, {"t": "scene", **self.scene_info()})
-        self.emit("host", {"t": "next_step", "next_step": self.next_step()})
+        if scene == "quiz":
+            self.emit_quiz()  # содержит и next_step для /host
+        else:
+            self.emit("host", {"t": "next_step", "next_step": self.next_step()})
 
     def scene_info(self) -> dict:
         return {
@@ -343,10 +351,43 @@ class Evening:
             "title": SCENE_TITLES[self.settings["scene"]],
         }
 
-    def next_step(self) -> str | None:
+    def scene_is_live(self, scene: str) -> bool:
+        if scene == "quiz":
+            return self.quiz.is_live()
+        return scene in LIVE
+
+    def next_step(self) -> dict | None:
+        """Контекстная кнопка «Следующий шаг» на /host: {label, cmd, args?, disabled?, hint?}."""
         cur = self.settings["scene"]
+        if cur == "quiz":
+            action = self.quiz.next_action()
+            if action:
+                return action
+        if cur == "ambient" and not self.quiz.st["done"]:
+            return {"label": "Квиз →", "cmd": "set_scene", "args": {"scene": "quiz"}}
         i = RECOMMENDED.index(cur) if cur in RECOMMENDED else -1
-        return RECOMMENDED[i + 1] if i + 1 < len(RECOMMENDED) else None
+        if i + 1 >= len(RECOMMENDED):
+            return None
+        nxt = RECOMMENDED[i + 1]
+        return {"label": f"{SCENE_TITLES[nxt]} →", "cmd": "set_scene", "args": {"scene": nxt}}
+
+    # ------------------------------------------------------------------ рассылки
+    def emit_settings(self) -> None:
+        self.emit({"tv", "host", "player", "carve"}, {"t": "settings", "settings": self.public_settings()})
+
+    def emit_facts(self) -> None:
+        self.emit("player", {"t": "facts", "facts": self.facts_public(), "locked": self.quiz.facts_locked()})
+
+    def emit_quiz(self, roles: set[str] | None = None) -> None:
+        roles = roles or {"tv", "host", "player"}
+        for role in ("tv", "host"):
+            if role in roles:
+                self.emit(role, {"t": "quiz", "quiz": self.quiz.public(role)})
+        if "player" in roles:
+            for pid in self.players:
+                self.emit("player", {"t": "quiz", "quiz": self.quiz.public("player", pid)}, player_id=pid)
+        if "host" in roles:
+            self.emit("host", {"t": "next_step", "next_step": self.next_step()})
 
     # ------------------------------------------------------------------ настройки ведущего
     HOST_SETTINGS = {
@@ -372,10 +413,12 @@ class Evening:
             self.players_changed()
         self._set(key, value)
         self.log(f"Настройка {key} = {value}")
-        self.emit({"tv", "host", "player", "carve"}, {"t": "settings", "settings": self.public_settings()})
+        self.emit_settings()
         if key == "hide_total":
             for pid in self.players:
                 self.emit("player", {"t": "me", "me": self.me(pid)}, player_id=pid)
+            if self.settings["scene"] == "quiz":
+                self.emit_quiz()  # рейтинг на экране мог показывать общий итог
 
     def public_settings(self) -> dict:
         keys = list(self.HOST_SETTINGS) + ["quiz_started"]
@@ -436,14 +479,16 @@ class Evening:
             "INSERT INTO facts(id, shown_at) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET shown_at=excluded.shown_at",
             (fact_id, self.clock.now()),
         )
-        self.emit("player", {"t": "facts", "facts": self.facts_public()})
+        self.emit_facts()
 
     def head_done(self, fact_id: str) -> None:
         if self.head_current and self.head_current["fact_id"] == fact_id:
             self.head_current = None
 
     def facts_public(self) -> list[dict]:
-        shown = {r["id"] for r in self.db.all("SELECT id FROM facts WHERE shown_at IS NOT NULL")}
+        # во время раунда 4 тексты не отдаются вовсе (вкладка «Факты» закрыта)
+        locked = self.quiz.facts_locked()
+        shown = set() if locked else {r["id"] for r in self.db.all("SELECT id FROM facts WHERE shown_at IS NOT NULL")}
         out = []
         for i, f in enumerate(self.content.facts(), 1):
             out.append({"n": i, "text": f["text"] if f["id"] in shown else None})
@@ -463,6 +508,7 @@ class Evening:
             shutil.rmtree(self.data_dir / sub, ignore_errors=True)
         self.head_current = None
         self._load()
+        self.quiz.reload()
         self.log(f"Вечер сброшен, копия: {dest.name}")
         if self.hub:
             self.hub.reset_all()

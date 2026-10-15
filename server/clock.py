@@ -10,9 +10,10 @@ import time
 
 
 class Clock:
-    def __init__(self, speed: float = 1.0):
+    def __init__(self, speed: float = 1.0, start: float | None = None):
         self.speed = float(speed) if speed and speed > 0 else 1.0
-        self._real0 = time.time()
+        # start: продолжить ускоренное время с сохранённой точки (после перезапуска симулятором)
+        self._real0 = max(time.time(), float(start)) if start else time.time()
         self._mono0 = time.monotonic()
 
     def now(self) -> float:

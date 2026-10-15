@@ -5,11 +5,12 @@ import { el, clear } from '/web/shared/util.js';
 // Сцены с собственным модулем; остальные пока показывают заглушку.
 const SCENE_MODULES = {
   ambient: './scenes/ambient.js',
+  quiz: './scenes/quiz.js',
 };
 
 const stage = document.getElementById('stage');
 const overlay = document.getElementById('overlay');
-const ctx = { link: null, scene: null, settings: {}, players: [], joinUrl: '', stubs: [], head: null };
+const ctx = { link: null, scene: null, settings: {}, players: [], joinUrl: '', stubs: [], head: null, quiz: null };
 let current = null; // {name, mod, inst}
 let mounting = Promise.resolve();
 
@@ -54,7 +55,7 @@ function onMessage(m) {
   switch (m.t) {
     case 'snapshot':
       ctx.scene = m.scene; ctx.settings = m.settings; ctx.players = m.players;
-      ctx.joinUrl = m.join_url; ctx.stubs = m.stubs; ctx.head = m.head;
+      ctx.joinUrl = m.join_url; ctx.stubs = m.stubs; ctx.head = m.head; ctx.quiz = m.quiz;
       remount(true);
       break;
     case 'scene':
@@ -72,6 +73,10 @@ function onMessage(m) {
       break;
     case 'head':
       ctx.head = m.head;
+      current?.inst.onMessage?.(m);
+      break;
+    case 'quiz':
+      ctx.quiz = m.quiz;
       current?.inst.onMessage?.(m);
       break;
     case 'sound_test':

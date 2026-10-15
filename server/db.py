@@ -61,11 +61,22 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS answers (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    qid       TEXT NOT NULL,
+    player_id INTEGER NOT NULL,
+    choice    INTEGER,
+    text      TEXT,
+    server_ts REAL NOT NULL,
+    verdict   INTEGER,
+    UNIQUE(qid, player_id)
+);
 CREATE INDEX IF NOT EXISTS ledger_player ON ledger(player_id);
+CREATE INDEX IF NOT EXISTS ledger_ref ON ledger(ref);
 """
 
 # Таблицы, которые очищает «Сбросить вечер».
-RESET_TABLES = ["players", "ledger", "facts", "photos", "pumpkins", "votes", "event_log", "settings"]
+RESET_TABLES = ["players", "ledger", "answers", "facts", "photos", "pumpkins", "votes", "event_log", "settings"]
 
 
 class DB:

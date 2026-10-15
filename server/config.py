@@ -42,6 +42,7 @@ DEFAULTS: dict = {
     "backup_interval_minutes": 5,
     # служебные ключи, в config.yaml обычно не пишутся
     "data_dir": "data",
+    "content_dir": "content",
     "speed": 1.0,
 }
 
@@ -65,6 +66,11 @@ class Config(dict):
         return p if p.is_absolute() else ROOT / p
 
     @property
+    def content_dir(self) -> Path:
+        p = Path(self["content_dir"])
+        return p if p.is_absolute() else ROOT / p
+
+    @property
     def root(self) -> Path:
         return ROOT
 
@@ -78,12 +84,13 @@ def load_config(path: str | os.PathLike | None = None, **overrides) -> Config:
     cfg = _merge(DEFAULTS, data)
     env = {
         "data_dir": os.environ.get("PUMPKIN_DATA"),
+        "content_dir": os.environ.get("PUMPKIN_CONTENT"),
         "port": os.environ.get("PUMPKIN_PORT"),
         "speed": os.environ.get("PUMPKIN_SPEED"),
     }
     for k, v in env.items():
         if v:
-            cfg[k] = type(DEFAULTS[k])(v) if k != "data_dir" else v
+            cfg[k] = v if k.endswith("_dir") else type(DEFAULTS[k])(v)
     for k, v in overrides.items():
         if v is not None:
             cfg[k] = v

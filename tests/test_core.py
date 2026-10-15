@@ -44,7 +44,7 @@ def test_scene_switch_reaches_players(client):
         assert cmd(host, "set_scene", scene="timer")["ok"]
         m = recv_until(pl, "scene")
         assert m["scene"] == "timer" and m["participating"] is False
-        assert cmd(host, "set_scene", scene="quiz")["ok"]
+        assert cmd(host, "set_scene", scene="game")["ok"]
         assert recv_until(pl, "scene")["participating"] is True
         # выход из живой сцены требует подтверждения
         r = cmd(host, "set_scene", scene="ambient")

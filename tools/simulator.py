@@ -9,7 +9,8 @@
 Сценарии:
   core     — вход, профили, переключение всех сцен, обрывы и возвраты, ручные правки очков,
              перезапуск сервера, сверка очков.
-  evening  — весь вечер. Сейчас = core; квиз, игра и резьба добавляются на своих этапах.
+  evening  — весь вечер: core + квиз (4 раунда на тестовом контенте tests/fixtures/content,
+             сверка очков до единицы, перезапуск посреди вопроса). Игра и голосование — на своих этапах.
 """
 from __future__ import annotations
 
@@ -33,7 +34,8 @@ import websockets
 ROOT = Path(__file__).resolve().parent.parent
 SCENES = ["ambient", "quiz", "game", "timer", "carve_vote", "carve_reveal",
           "rating_reveal", "final_photo", "slideshow", "download"]
-NOT_YET = ["квиз (этап 3)", "игра (этап 5)", "голосование за резьбу (этап 5)"]
+NOT_YET = ["игра (этап 5)", "голосование за резьбу (этап 5)"]
+TEST_CONTENT = ROOT / "tests" / "fixtures" / "content"
 
 
 class Report:
@@ -66,7 +68,8 @@ class ServerProc:
     async def start(self) -> None:
         cmd = [sys.executable, "-m", "server", "--port", str(self.port), "--data", str(self.data),
                "--speed", str(self.speed), "--bind", "127.0.0.1"]
-        self.proc = subprocess.Popen(cmd, cwd=ROOT, stdout=self.log, stderr=subprocess.STDOUT)
+        env = {**os.environ, "PUMPKIN_CONTENT": str(TEST_CONTENT)}
+        self.proc = subprocess.Popen(cmd, cwd=ROOT, stdout=self.log, stderr=subprocess.STDOUT, env=env)
         await wait_health(self.url)
 
     async def stop(self) -> None:
@@ -117,6 +120,7 @@ class Client:
         self.replies: dict[int, asyncio.Future] = {}
         self.next_id = 1
         self.connected = asyncio.Event()
+        self.quiz: dict | None = None
         self.reconnects = 0
         self.want = True
 
@@ -157,7 +161,13 @@ class Client:
         if t == "snapshot":
             self.snapshot = m
             self.scene = m["scene"]["scene"]
+            self.quiz = m.get("quiz")
             self.connected.set()
+        elif t == "quiz":
+            self.quiz = m["quiz"]
+        elif t == "head" and self.role == "tv" and m.get("head"):
+            # как настоящий ТВ: пузырь появился — факт показан
+            asyncio.get_running_loop().create_task(self.cmd("head_shown", fact_id=m["head"]["fact_id"]))
         elif t == "scene":
             self.scene = m["scene"]
         elif t == "reply":
@@ -166,6 +176,8 @@ class Client:
                 fut.set_result(m)
         elif t == "players" and self.snapshot is not None:
             self.snapshot["players"] = m["players"]
+        elif t == "settings" and self.snapshot is not None:
+            self.snapshot["settings"] = m["settings"]
 
     async def cmd(self, name: str, **args) -> dict:
         await asyncio.wait_for(self.connected.wait(), 10)
@@ -298,10 +310,168 @@ async def scenario_core(base: str, n_players: int, rep: Report, server: ServerPr
     for c in [host, tv, *players]:
         await c.drop()
     await http.aclose()
+    return [(p.name, p.token, p.pid) for p in players], expected
 
-    print("\nОчки по игрокам (ожидаемые = фактические):")
-    for p in players:
-        print(f"  {p.name}: {expected[p.pid]}")
+
+# ---------------------------------------------------------------------- квиз
+def correct_choice(qid: str) -> int:
+    """Правильный вариант в тестовом контенте (tools/make_test_content.py): (раунд + номер) % 4."""
+    r, i = qid[1:].split("q")
+    return (int(r) + int(i)) % 4
+
+
+async def scenario_quiz(base: str, roster: list, expected: dict[int, int], rep: Report,
+                        server: ServerProc | None) -> None:
+    http = httpx.AsyncClient(base_url=base, timeout=10)
+    rnd = random.Random(7)
+    print("Квиз: подготовка")
+    r = (await http.post("/api/join", json={"name": "Ведущий", "avatar_kind": "pumpkin",
+                                            "avatar_ref": "pumpkin-8", "as_host": True})).json()
+    if not r.get("ok"):
+        rep.fail(f"профиль ведущего не создан: {r}")
+        return
+    host_player = (r["me"]["name"], r["token"], r["me"]["id"])
+    expected[host_player[2]] = 0
+    host = Client(base, "host")
+    tv = Client(base, "tv")
+    clients = []
+    for name, token, pid in [host_player, *roster]:
+        c = Client(base, "player", token, name)
+        c.pid = pid
+        c.in_scoring = pid != host_player[2]
+        # характер игрока: точность и вероятность промолчать
+        c.accuracy = 1.0 if not c.in_scoring else rnd.uniform(0.4, 0.95)
+        clients.append(c)
+    everyone = [host, tv, *clients]
+    for c in everyone:
+        c.start()
+    rep.check(await wait_for(lambda: all(c.connected.is_set() for c in everyone), 10),
+              "все подключились к квизу", "не все подключились к квизу")
+
+    # голова показывает все факты (нужны для раунда 4)
+    await host.cmd("set_scene", scene="ambient", force=True)
+    for _ in range(20):
+        await host.cmd("head_call")
+        await asyncio.sleep(0.05)
+    await asyncio.sleep(0.3)
+
+    await host.cmd("set_scene", scene="quiz", force=True)
+    restarted = False
+
+    async def wait_phase(pred, timeout=15.0) -> bool:
+        return await wait_for(lambda: host.quiz is not None and pred(host.quiz), timeout)
+
+    for rno in range(1, 5):
+        r = await host.cmd("quiz_start_round")
+        if not r["ok"]:
+            rep.fail(f"раунд {rno} не начался: {r.get('error')}")
+            return
+        await wait_phase(lambda q: q["phase"] == "intro" and q["round"] == rno)
+        count = host.quiz["q_count"]
+        if rno == 4:
+            rep.check(host.quiz["facts_locked"], "вкладка «Факты» закрыта в раунде 4", "факты не закрыты в раунде 4")
+        for k in range(count):
+            if k == 0:  # дальше вопросы показывает «Следующий вопрос» (quiz_next)
+                r = await host.cmd("quiz_show")
+                if not r["ok"]:
+                    rep.fail(f"раунд {rno}, вопрос {k + 1}: {r.get('error')}")
+                    return
+            if not await wait_phase(lambda q: q["phase"] == "question" and q["q_index"] == k):
+                rep.fail(f"раунд {rno}, вопрос {k + 1} не показан")
+                return
+            qid = host.quiz["question"]["id"]
+            kind = host.quiz["question"]["kind"]
+            order = clients[:]
+            rnd.shuffle(order)
+            silent = {c.pid for c in order if c.in_scoring and rnd.random() < 0.08}
+            plan = []  # (клиент, ответ, верно ли)
+            for c in order:
+                if c.pid in silent:
+                    continue
+                good = rnd.random() < c.accuracy
+                if kind == "choice":
+                    ok = correct_choice(qid)
+                    plan.append((c, {"choice": ok if good else (ok + 1 + rnd.randrange(3)) % 4}, good))
+                else:
+                    plan.append((c, {"text": "верно" if good else "не знаю"}, good))
+            # обрыв и возврат посреди вопроса: ответ после возврата принимается
+            if rno == 1 and k == 4 and plan:
+                c = plan[-1][0]
+                await c.drop()
+                c.connected.clear()
+                c.start()
+                await wait_for(lambda: c.connected.is_set(), 5)
+            sent = []
+            for i, (c, ans, good) in enumerate(plan):
+                if server is not None and not restarted and rno == 2 and k == 3 and i == len(plan) // 2:
+                    print("Квиз: перезапуск сервера посреди вопроса")
+                    await server.stop()
+                    for x in everyone:
+                        x.connected.clear()
+                    await server.start()
+                    restarted = True
+                    ok = await wait_for(lambda: all(x.connected.is_set() for x in everyone), 15)
+                    rep.check(ok and host.quiz["phase"] == "question" and host.quiz["answered_count"] == len(sent),
+                              "перезапуск посреди вопроса: фаза и ответы сохранены",
+                              f"после перезапуска квиз в фазе {host.quiz and host.quiz['phase']}, "
+                              f"ответов {host.quiz and host.quiz.get('answered_count')} вместо {len(sent)}")
+                rr = await c.cmd("quiz_answer", qid=qid, **ans)
+                if rr["ok"]:
+                    sent.append((c, good))
+                else:
+                    rep.fail(f"{qid}: ответ {c.name} не принят: {rr.get('error')}")
+            # ожидаемые очки: 200 за верный, бонус первым трём верным в зачёте
+            bonus = [50, 25, 10]
+            for c, good in sent:
+                if good:
+                    expected[c.pid] += 200
+                    if c.in_scoring and bonus:
+                        expected[c.pid] += bonus.pop(0)
+            if silent and kind == "choice":
+                await wait_phase(lambda q: q["phase"] == "reveal" and q["q_index"] == k, timeout=70 / server.speed + 10
+                                 if server else 70)
+            if kind == "text":
+                await wait_phase(lambda q: q["phase"] == "judging" and q["q_index"] == k,
+                                 timeout=(70 / server.speed + 10) if server else 70)
+                for a in host.quiz.get("answers", []):
+                    await host.cmd("quiz_verdict", player_id=a["player_id"], ok=a["text"] == "верно")
+                await host.cmd("quiz_reveal")
+            ok = await wait_phase(lambda q: q["phase"] == "reveal" and q["q_index"] == k,
+                                  timeout=(70 / server.speed + 10) if server else 70)
+            if not ok:
+                rep.fail(f"{qid}: разбор не наступил (фаза {host.quiz['phase']})")
+                return
+            await host.cmd("quiz_next")
+        ok = await wait_phase(lambda q: q["phase"] == "rating" and q["round"] == rno)
+        rating = host.quiz.get("rating") or {}
+        rep.check(ok and all(row["player_id"] != host_player[2] for row in rating.get("round", [])),
+                  f"раунд {rno}: {count} вопросов, итоги без ведущего вне зачёта",
+                  f"раунд {rno}: итоги не показаны или ведущий в рейтинге")
+        if rno == 3:
+            rep.check(rating.get("total") is None and host.snapshot["settings"]["hide_total"] is True,
+                      "после раунда 3 общий рейтинг скрыт", "общий рейтинг не скрыт после раунда 3")
+    rep.check(host.quiz["done"] and not host.quiz["facts_locked"], "квиз окончен, факты снова открыты",
+              "квиз не закончился или факты закрыты")
+
+    def scores_ok() -> bool:
+        got = {p["id"]: p["score"] for p in host.snapshot["players"]}
+        return all(got.get(pid) == exp for pid, exp in expected.items())
+
+    ok = await wait_for(scores_ok, 5)
+    if ok:
+        rep.step(f"очки после квиза совпали у всех {len(expected)} игроков (включая ведущего вне зачёта)")
+    else:
+        got = {p["id"]: p["score"] for p in host.snapshot["players"]}
+        for pid, exp in expected.items():
+            if got.get(pid) != exp:
+                rep.fail(f"игрок {pid}: ожидалось {exp}, на сервере {got.get(pid)}")
+    for c in everyone:
+        await c.drop()
+    await http.aclose()
+    print("\nИтог (ожидаемые = фактические очки):")
+    names = {pid: name for name, _, pid in [host_player, *roster]}
+    for pid, exp in sorted(expected.items(), key=lambda x: -x[1]):
+        print(f"  {names[pid]}: {exp}")
 
 
 async def main_async(args) -> int:
@@ -314,8 +484,12 @@ async def main_async(args) -> int:
         await server.start()
         base = server.url
     try:
-        await scenario_core(base, args.players, rep, server)
+        roster, expected = await scenario_core(base, args.players, rep, server)
         if args.scenario == "evening":
+            if server is None:
+                print("\nКвиз пропущен: нужен свой сервер с тестовым контентом (запуск без --url)")
+            else:
+                await scenario_quiz(base, roster, expected, rep, server)
             print("\nЕщё не реализовано в приложении, пропущено: " + ", ".join(NOT_YET))
     finally:
         if server:

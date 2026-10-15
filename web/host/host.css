@@ -33,3 +33,15 @@ details > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 .qr-box { background: #fff; padding: 10px; border-radius: 12px; width: 220px; margin: 0 auto; }
 .qr-box img { display: block; width: 100%; }
 .webcam-img { width: 100%; border-radius: 8px; margin-top: 8px; }
+
+/* квиз */
+.quiz-host { display: flex; flex-direction: column; gap: 8px; }
+.qh-q { background: #0005; border-radius: 10px; padding: 10px; }
+.qh-text { font-weight: 700; margin-bottom: 6px; }
+.qh-correct { color: var(--ok); font-weight: 700; }
+.qh-list { font-size: .9rem; display: flex; flex-direction: column; gap: 2px; }
+.qh-ans { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.qh-ans .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.vbtn { min-width: 52px; font-size: 1.3rem; }
+.vbtn.on-ok { background: var(--ok); color: #071; border-color: var(--ok); }
+.vbtn.on-bad { background: var(--fail); color: #fff; border-color: var(--fail); }

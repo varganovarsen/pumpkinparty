@@ -19,7 +19,8 @@
 ## Разработка
 
 - Тесты: `pip install -r requirements-dev.txt && python -m pytest`.
-- Симулятор: `python tools/simulator.py --players 8 --speed 30 --scenario evening`.
+- Симулятор: `python tools/simulator.py --players 8 --speed 30 --scenario evening` (квиз — на тестовом контенте).
+- Попробовать квиз без настоящего контента: `set PUMPKIN_CONTENT=tests\fixtures\content` (Windows) перед запуском сервера.
 - Контент: `python tools/check_content.py`.
 - Заглушки ассетов: `python tools/make_stubs.py` (нужен ffmpeg).
 - Модель тыквы из glTF: `python tools/pack_model.py <папка со scene.gltf>` → `assets/carve/pumpkin.glb`.
@@ -30,4 +31,5 @@
 
 - Этап 1 (ядро, модули 01 и 08) готов.
 - Этап 2: прототип резьбы на `/carve` проверен на iPad — решение «идём» (`docs/DECISIONS.md`). Аллея и голосование — день 11.
-- Дальше: квиз (модуль 02).
+- Этап 3: квиз (4 раунда, бонусы за скорость, раунд 4 с ручной проверкой, скрытый рейтинг) готов. Симулятор прогоняет его целиком.
+- Дальше: фото (модуль 03).

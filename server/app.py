@@ -8,6 +8,7 @@ import logging.handlers
 import os
 import re
 import secrets
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -60,9 +61,15 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     data_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(data_dir)
 
-    clock = Clock(cfg["speed"])
     db = DB(data_dir / "pumpkin.db")
-    content = Content(ROOT)
+    # При ускорении (симулятор) время сервера продолжается с сохранённой точки, иначе после
+    # перезапуска дедлайны квиза оказались бы в «будущем». При speed = 1 это просто часы.
+    start = None
+    if float(cfg["speed"]) != 1:
+        last_event = db.one("SELECT MAX(ts) AS ts FROM event_log")["ts"]
+        start = max(float(db.get_setting("clock_now") or 0), float(last_event or 0)) or None
+    clock = Clock(cfg["speed"], start=start)
+    content = Content(cfg.content_dir)
     ev = Evening(cfg, db, clock, content)
     hub = Hub(ev)
     created = assets.ensure_assets(ROOT / "assets")
@@ -83,13 +90,30 @@ def create_app(cfg: Config | None = None) -> FastAPI:
             except Exception:  # noqa: BLE001
                 log.exception("Резервная копия не удалась")
 
+    async def tick_loop():
+        """Таймеры сцен (автозакрытие вопроса квиза) по серверному времени."""
+        last_save = 0.0
+        while True:
+            await clock.sleep(0.2)
+            try:
+                ev.quiz.tick()
+                if clock.speed != 1 and time.monotonic() - last_save > 1:
+                    db.set_setting("clock_now", clock.now())
+                    last_save = time.monotonic()
+            except Exception:  # noqa: BLE001 — сбой одного тика не должен останавливать таймеры
+                log.exception("Сбой таймера")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         (data_dir / "server.pid").write_text(str(os.getpid()), encoding="utf-8")
         task = asyncio.create_task(backup_loop())
+        ticker = asyncio.create_task(tick_loop())
         log.info("Сервер запущен: %s (скорость времени x%s)", join_url(), clock.speed)
         yield
         task.cancel()
+        ticker.cancel()
+        if clock.speed != 1:
+            db.set_setting("clock_now", clock.now())
         try:
             make_backup(db, data_dir)
         except Exception:  # noqa: BLE001
@@ -141,8 +165,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     (ROOT / "assets").mkdir(exist_ok=True)
     app.mount("/assets", StaticFiles(directory=ROOT / "assets"), name="assets")
     for sub in ("images", "audio"):  # quiz.yaml и facts.yaml наружу не отдаются
-        (ROOT / "content" / sub).mkdir(parents=True, exist_ok=True)
-        app.mount(f"/content/{sub}", StaticFiles(directory=ROOT / "content" / sub), name=f"content-{sub}")
+        (cfg.content_dir / sub).mkdir(parents=True, exist_ok=True)
+        app.mount(f"/content/{sub}", StaticFiles(directory=cfg.content_dir / sub), name=f"content-{sub}")
 
     @app.get("/media/pumpkins/{pid}/{name}")
     async def pumpkin_media(pid: int, name: str):

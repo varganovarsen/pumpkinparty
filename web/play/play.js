@@ -2,6 +2,7 @@
 import { Link } from '/web/shared/ws.js';
 import { el, clear, toast, api, store, offlineBar, vibrate } from '/web/shared/util.js';
 import { avatarPicker } from '/web/play/avatar_picker.js';
+import { mountQuiz } from '/web/play/quiz.js';
 
 const TOKEN_KEY = 'pumpkin.token';
 const TAB_KEY = 'pumpkin.tab';
@@ -114,7 +115,9 @@ function onMessage(m) {
   switch (m.t) {
     case 'snapshot':
       S.me = m.me; S.scene = m.scene; S.settings = m.settings; S.facts = m.facts; S.taken = m.avatars_taken;
+      S.factsLocked = !!m.facts_locked; S.quiz = m.quiz;
       render();
+      quizView?.update(S.quiz);
       break;
     case 'scene': {
       const was = S.scene?.participating;
@@ -125,7 +128,8 @@ function onMessage(m) {
     }
     case 'me': S.me = m.me; renderTop(); break;
     case 'settings': S.settings = m.settings; renderTop(); break;
-    case 'facts': S.facts = m.facts; if (S.tab === 'facts') renderTab(); break;
+    case 'facts': S.facts = m.facts; S.factsLocked = !!m.locked; if (S.tab === 'facts' && !S.scene?.participating) renderTab(); break;
+    case 'quiz': S.quiz = m.quiz; quizView?.update(S.quiz); break;
     case 'avatars_taken': S.taken = m.taken; break;
     case 'reset':
       store(TOKEN_KEY, null);
@@ -139,6 +143,7 @@ function onMessage(m) {
 
 // ---------------------------------------------------------------- основной экран
 let topEl, bannerEl, mainEl, tabsEl;
+let quizView = null;
 
 let renderedKey = null;
 
@@ -152,6 +157,8 @@ function render(force = false) {
     return;
   }
   renderedKey = key;
+  quizView?.unmount();
+  quizView = null;
   topEl = el('div', { class: 'topbar' });
   bannerEl = el('div');
   mainEl = el('div');
@@ -189,7 +196,12 @@ function renderTop() {
 }
 
 function renderParticipating() {
-  // Полноэкранный режим без вкладок. Содержимое сцен появится в модулях 02, 05, 06.
+  // Полноэкранный режим без вкладок. Игра и голосование появятся в модулях 05, 06.
+  if (S.scene.scene === 'quiz') {
+    quizView = mountQuiz(mainEl, S.link);
+    quizView.update(S.quiz);
+    return;
+  }
   mainEl.append(el('div', { class: 'fullscene' },
     el('div', { class: 'big' }, S.scene.title),
     el('p', { class: 'muted' }, 'Смотри на экран телевизора — сейчас начнётся!'),
@@ -214,6 +226,11 @@ function renderTab() {
 }
 
 function renderFacts() {
+  if (S.factsLocked) {
+    mainEl.append(el('div', { class: 'card center' }, el('h2', {}, 'Факты от тыквы'),
+      el('p', { class: 'muted' }, 'Недоступно во время раунда. Откроется после раунда «Факты».')));
+    return;
+  }
   const shown = S.facts.filter((f) => f.text).length;
   const list = el('ul', { class: 'facts' });
   for (const f of S.facts) {

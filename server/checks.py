@@ -75,7 +75,7 @@ def static_checks(cfg: Config) -> list[dict]:
     items = [f"нет: {p}" for p in miss] + [f"заглушка: {p}" for p in stubs] + [f"не задан: {p}" for p in opt]
     out.append(_item("assets", "Ассеты", status, detail, items))
 
-    errors, warnings = check_content(cfg.root / "content")
+    errors, warnings = check_content(cfg.content_dir)
     out.append(_item("content", "Контент (check_content)", FAIL if errors else WARN if warnings else OK,
                      f"ошибок {len(errors)}, предупреждений {len(warnings)}",
                      [f"ошибка: {e}" for e in errors] + [f"внимание: {w}" for w in warnings]))

@@ -1,8 +1,9 @@
 // Панель ведущего (/host) и проверки (/check). Модуль 01, каркас.
 import { Link } from '/web/shared/ws.js';
 import { el, clear, toast, api, fmtTime, offlineBar } from '/web/shared/util.js';
+import { quizPanel } from '/web/host/quiz.js';
 
-const S = { scene: null, scenes: [], settings: {}, players: [], log: [], nextStep: null, joinUrl: '', tvCount: null, logFilter: '' };
+const S = { scene: null, scenes: [], settings: {}, players: [], log: [], nextStep: null, joinUrl: '', tvCount: null, logFilter: '', quiz: null };
 const $ = (id) => document.getElementById(id);
 const evening = $('evening');
 const checkMain = $('check');
@@ -87,19 +88,30 @@ function renderHeader() {
   $('tv-state').className = S.tvCount ? 'muted' : 'status-fail';
 }
 
+function renderNext() {
+  const n = S.nextStep;
+  box.next.textContent = n ? `Следующий шаг: ${n.label}` : 'Вечер завершён';
+  box.next.disabled = !n || !!n.disabled;
+  box.next.onclick = () => n && run(n.cmd, n.args || {});
+}
+
 function renderScenes() {
-  box.next.textContent = S.nextStep ? `Следующий шаг: ${title(S.nextStep)} →` : 'Вечер завершён';
-  box.next.disabled = !S.nextStep;
-  box.next.onclick = () => S.nextStep && setScene(S.nextStep);
+  renderNext();
   clear(box.scenes);
   for (const s of S.scenes) {
     box.scenes.append(el('button', { class: S.scene?.scene === s.id ? 'on' : '', onclick: () => setScene(s.id) }, s.title));
   }
-  clear(box.current).append(el('p', { class: 'muted' },
-    S.scene?.scene === 'ambient'
-      ? 'Фон, QR и голова-тыква. Гости делают селфи и режут тыкву на iPad.'
-      : `Управление сценой «${S.scene?.title}» появится вместе с её модулем.`),
-  el('button', { onclick: () => setScene('ambient'), disabled: S.scene?.scene === 'ambient' }, '← В ambient'));
+  clear(box.current);
+  if (S.scene?.scene === 'quiz') {
+    box.current.append(quiz.el);
+    quiz.update(S.quiz);
+  } else {
+    box.current.append(el('p', { class: 'muted' },
+      S.scene?.scene === 'ambient'
+        ? 'Фон, QR и голова-тыква. Гости делают селфи и режут тыкву на iPad.'
+        : `Управление сценой «${S.scene?.title}» появится вместе с её модулем.`));
+  }
+  box.current.append(el('button', { style: { marginTop: '10px' }, onclick: () => setScene('ambient'), disabled: S.scene?.scene === 'ambient' }, '← В ambient'));
 }
 
 function renderPlayers() {
@@ -229,12 +241,13 @@ function onMessage(m) {
   switch (m.t) {
     case 'snapshot':
       S.scene = m.scene; S.scenes = m.scenes; S.settings = m.settings; S.players = m.players;
-      S.log = m.log; S.nextStep = m.next_step; S.joinUrl = m.join_url; S.tvCount = m.tv_count;
+      S.log = m.log; S.nextStep = m.next_step; S.joinUrl = m.join_url; S.tvCount = m.tv_count; S.quiz = m.quiz;
       if (S.logFilter) box.logFilter.dispatchEvent(new Event('change'));
       renderAll();
       break;
     case 'scene': S.scene = m; renderHeader(); renderScenes(); break;
-    case 'next_step': S.nextStep = m.next_step; renderScenes(); break;
+    case 'next_step': S.nextStep = m.next_step; renderNext(); break;
+    case 'quiz': S.quiz = m.quiz; if (S.scene?.scene === 'quiz') quiz.update(S.quiz); break;
     case 'players': S.players = m.players; renderPlayers(); break;
     case 'settings': S.settings = m.settings; renderSettings(); break;
     case 'tv_count': S.tvCount = m.count; renderHeader(); break;
@@ -255,5 +268,6 @@ const link = new Link({
   onMessage,
   onStatus: (on) => { $('conn').classList.toggle('on', on); offlineBar(on); },
 });
+const quiz = quizPanel(link, run);
 link.connect();
 if (location.pathname === '/check') showTab('check');

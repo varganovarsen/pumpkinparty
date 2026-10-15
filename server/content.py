@@ -34,8 +34,8 @@ class YamlFile:
 
 
 class Content:
-    def __init__(self, root: Path):
-        self.dir = root / "content"
+    def __init__(self, content_dir: Path):
+        self.dir = content_dir
         self._facts = YamlFile(self.dir / "facts.yaml", [])
         self._quiz = YamlFile(self.dir / "quiz.yaml", {})
 

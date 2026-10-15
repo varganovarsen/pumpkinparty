@@ -81,9 +81,12 @@ class Hub:
         if c.role == "player":
             snap["me"] = ev.me(c.player_id)
             snap["facts"] = ev.facts_public()
+            snap["facts_locked"] = ev.quiz.facts_locked()
             snap["avatars_taken"] = ev.taken_avatars()
+            snap["quiz"] = ev.quiz.public("player", c.player_id)
         if c.role in ("tv", "host"):
             snap["players"] = ev.players_public(with_scores=True)
+            snap["quiz"] = ev.quiz.public(c.role)
         if c.role == "tv":
             snap["head"] = ev.head_snapshot()
             snap["stubs"] = self.stubs()
@@ -209,7 +212,20 @@ def _host_reload_scene(hub: Hub, c: Conn, m: dict):
 
 
 def _host_skip_question(hub: Hub, c: Conn, m: dict):
-    raise CmdError("Сейчас нет идущего вопроса", "no_question")
+    hub.ev.quiz.skip()
+
+
+def _quiz(method: str, *keys: str):
+    """Команда ведущего, которая вызывает метод квиза с аргументами из сообщения."""
+    def handler(hub: Hub, c: Conn, m: dict):
+        if hub.ev.settings["scene"] != "quiz":
+            raise CmdError("Сначала включите сцену «Квиз»", "wrong_scene")
+        getattr(hub.ev.quiz, method)(*(m.get(k) for k in keys))
+    return handler
+
+
+def _player_quiz_answer(hub: Hub, c: Conn, m: dict):
+    return hub.ev.quiz.answer(c.player_id, str(m["qid"]), choice=m.get("choice"), text=m.get("text"))
 
 
 def _host_log(hub: Hub, c: Conn, m: dict):
@@ -259,9 +275,16 @@ COMMANDS: dict[str, dict[str, Callable]] = {
         "sound_test": _host_sound_test,
         "head_call": _host_head_call,
         "head_skip": _host_head_skip,
+        "quiz_start_round": _quiz("start_round"),
+        "quiz_show": _quiz("show_question"),
+        "quiz_close": _quiz("close"),
+        "quiz_verdict": _quiz("verdict", "player_id", "ok"),
+        "quiz_verdict_rest": _quiz("verdict_rest", "ok"),
+        "quiz_reveal": _quiz("reveal"),
+        "quiz_next": _quiz("next"),
         "snapshot": _snapshot,
     },
     "tv": {"head_shown": _tv_head_shown, "head_done": _tv_head_done, "snapshot": _snapshot},
-    "player": {"update_profile": _player_profile, "snapshot": _snapshot},
+    "player": {"update_profile": _player_profile, "quiz_answer": _player_quiz_answer, "snapshot": _snapshot},
     "carve": {"snapshot": _snapshot},
 }
