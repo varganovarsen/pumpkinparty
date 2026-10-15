@@ -43,7 +43,8 @@ class Content:
         data = self._facts.get()
         if not isinstance(data, list):
             return []
-        return [f for f in data if isinstance(f, dict) and f.get("id") and f.get("text")]
+        # id всегда строка: в YAML «id: 001» превращается в число 1
+        return [{**f, "id": str(f["id"])} for f in data if isinstance(f, dict) and f.get("id") is not None and f.get("text")]
 
     def fact(self, fact_id: str) -> dict | None:
         return next((f for f in self.facts() if f["id"] == fact_id), None)

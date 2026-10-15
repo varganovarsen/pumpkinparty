@@ -115,7 +115,9 @@ export function mount(root, ctx) {
       if (countEl) countEl.textContent = `Ответили ${q.answered_count ?? 0} из ${q.eligible_count ?? 0}`;
       return;
     }
-    if (q.phase === 'reveal' && !key?.startsWith('reveal') && !q.reveal?.skipped) ctx.sfx('correct');
+    if (q.phase === 'reveal' && !key?.startsWith('reveal') && !q.reveal?.skipped) {
+      ctx.sfx(q.reveal?.top?.length || q.reveal?.answers?.some((a) => a.verdict) ? 'correct' : 'wrong');
+    }
     key = k;
     timer = null;
     countEl = null;

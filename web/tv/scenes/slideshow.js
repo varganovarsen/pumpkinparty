@@ -48,7 +48,7 @@ export function mount(root, ctx) {
     }
     if (!queue.length) queue = shuffle([...all]); // все показаны — перемешать заново
     show(queue.shift());
-    if (!paused) timer = setTimeout(next, SECONDS * 1000);
+    if (!paused) timer = setTimeout(next, (ctx.config.slideshow_seconds || SECONDS) * 1000);
   }
 
   load();

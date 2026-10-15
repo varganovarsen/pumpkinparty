@@ -35,8 +35,10 @@ def fall_time(progress: float, kind: str) -> float:
     return round(base * (0.7 if kind == "golden" else 1.0), 3)
 
 
-def generate(seed: int, mode: str) -> list[dict]:
-    duration, n_regular, n_golden, n_rotten = PLANS[mode]
+def generate(seed: int, mode: str, duration: float | None = None) -> list[dict]:
+    """Расписание; duration — длительность попытки (по умолчанию из PLANS, обычно из config.yaml)."""
+    plan_duration, n_regular, n_golden, n_rotten = PLANS[mode]
+    duration = float(duration or plan_duration)
     rnd = random.Random(f"{mode}:{seed}")
     n_good = n_regular + n_golden
     first, last = 3.6, duration - 0.6
@@ -90,7 +92,8 @@ class Game:
 
     def reload(self) -> None:
         self.st = self.ev.settings.get("game") or _empty()
-        self.items = generate(self.st["seed"], self.st["mode"]) if self.st["mode"] else []
+        self.items = (generate(self.st["seed"], self.st["mode"], self.st.get("duration"))
+                      if self.st["mode"] else [])
 
     def save(self) -> None:
         self.ev._set("game", self.st)
@@ -117,12 +120,13 @@ class Game:
         if mode == "scored" and self.st["scored_done"]:
             raise CmdError("Зачётная попытка уже сыграна (сброс — в аварийном разделе)", "done")
         now = self.ev.clock.now()
-        duration = PLANS[mode][0]
+        # длительность из config.yaml (game.practice_seconds / scored_seconds)
+        duration = float(self.cfg.get(f"{mode}_seconds") or PLANS[mode][0])
         seed = random.randrange(1, 10**9)
         eligible = [p.id for p in self.ev.players.values() if p.connected]
-        self.st.update(mode=mode, phase="countdown", seed=seed, start_at=now + COUNTDOWN,
+        self.st.update(mode=mode, phase="countdown", seed=seed, start_at=now + COUNTDOWN, duration=duration,
                        end_at=now + COUNTDOWN + duration, eligible=eligible, results={}, live={})
-        self.items = generate(seed, mode)
+        self.items = generate(seed, mode, duration)
         self._changed(f"Игра: {'тренировка' if mode == 'practice' else 'зачёт'}, игроков {len(eligible)}")
 
     def reset(self) -> None:
@@ -183,6 +187,7 @@ class Game:
             return
         self.st["phase"] = "finished"
         if self.st["mode"] == "scored":
+            self.ev.db.execute("DELETE FROM ledger WHERE source='game'")  # повторный финиш не удвоит очки
             for pid in self.st["eligible"]:
                 s = self.st["results"].get(str(pid), 0)
                 if s > 0 and pid in self.ev.players:
@@ -209,7 +214,7 @@ class Game:
             "mode": st["mode"], "phase": st["phase"], "scored_done": st["scored_done"],
             "start_at_ms": int(st["start_at"] * 1000) if st["start_at"] else None,
             "end_at_ms": int(st["end_at"] * 1000) if st["end_at"] else None,
-            "board": self.board(),
+            "board": self.board(), "duration": st.get("duration"),
         }
         if role == "player" and player_id is not None:
             eligible = player_id in st["eligible"]
@@ -226,6 +231,8 @@ class Game:
             return None
         if not self.st["scored_done"]:
             if self.st["mode"] is None:
-                return {"label": "Тренировка (15 с)", "cmd": "game_start", "args": {"mode": "practice"}}
-            return {"label": "Старт зачёта (45 с)", "cmd": "game_start", "args": {"mode": "scored"}}
+                return {"label": f"Тренировка ({self.cfg['practice_seconds']:g} с)", "cmd": "game_start",
+                        "args": {"mode": "practice"}}
+            return {"label": f"Старт зачёта ({self.cfg['scored_seconds']:g} с)", "cmd": "game_start",
+                    "args": {"mode": "scored"}}
         return None

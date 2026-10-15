@@ -56,7 +56,7 @@ export function mount(root, ctx) {
     cardTimer = setTimeout(() => {
       cardBox.firstChild?.classList.remove('in');
       setTimeout(() => clear(cardBox), 800);
-    }, (ctx.settings.new_photo_card_seconds || 7) * 1000);
+    }, (ctx.config.new_photo_card_seconds || 7) * 1000);
   }
 
   renderBg();

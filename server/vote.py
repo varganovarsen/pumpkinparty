@@ -72,6 +72,7 @@ class Vote:
                                               for i, pid in enumerate(ids, 1)])
         self.ev.db.execute("DELETE FROM votes")
         self.ev._set("carve_locked", True)
+        self.ev.emit_settings()  # /carve сразу показывает, что тыквы больше не меняются
         self._changed(f"Голосование за резьбу открыто, тыкв: {len(ids)}")
 
     def close(self) -> None:
@@ -84,22 +85,46 @@ class Vote:
             if n is not None:
                 counts[n] += 1
         bonus = list(self.ev.cfg["carve"]["bonus"])
-        ordered = sorted(self.st["entries"], key=lambda e: -counts[e["n"]])
+
+        def scoring(e: dict) -> bool:
+            p = self.ev.players.get(e["player_id"])
+            return bool(p and p.in_scoring)
+
+        # вне зачёта (ведущий) — в аллее и с голосами, но без места и бонуса (SPEC 7)
+        ranked = sorted((e for e in self.st["entries"] if scoring(e)), key=lambda e: -counts[e["n"]])
         results = []
         place, prev = 0, None
-        for i, e in enumerate(ordered, 1):
+        for i, e in enumerate(ranked, 1):
             v = counts[e["n"]]
             if v != prev:
                 place, prev = i, v
             got = place if v > 0 else None
             b = bonus[got - 1] if got and got <= len(bonus) else 0
             results.append({"n": e["n"], "player_id": e["player_id"], "votes": v, "place": got, "bonus": b})
-            if b and e["player_id"] in self.ev.players:
-                self.ev.add_points(e["player_id"], "carve", b, ref="carve", notify=False)
-        self.ev.scores_changed({r["player_id"] for r in results})
+        for e in self.st["entries"]:
+            if not scoring(e):
+                results.append({"n": e["n"], "player_id": e["player_id"], "votes": counts[e["n"]], "place": None,
+                                "bonus": 0, "out_of_scoring": True})
+        # повторное закрытие после сбоя не удвоит бонусы
+        self.ev.db.execute("DELETE FROM ledger WHERE source='carve' AND ref='carve'")
+        for r in results:
+            if r["bonus"] and r["player_id"] in self.ev.players:
+                self.ev.add_points(r["player_id"], "carve", r["bonus"], ref="carve", notify=False)
+        # телефонам новые суммы — только после раскрытия на ТВ (иначе +500 выдало бы победителя)
+        self.ev.emit({"host", "tv"}, {"t": "players", "players": self.ev.players_public(with_scores=True)})
         self.st.update(phase="closed", results=results, reveal_step=-1)
         self._changed("Голосование закрыто: " + ", ".join(
             f"№{r['n']} {r['votes']} гол." for r in results))
+
+    def reset(self) -> None:
+        """Аварийно: отменить голосование и его бонусы, тыквы снова можно менять."""
+        self.ev.db.execute("DELETE FROM ledger WHERE source='carve'")
+        self.ev.db.execute("DELETE FROM votes")
+        self.st = _empty()
+        self.ev._set("carve_locked", False)
+        self.ev.scores_changed(set(self.ev.players))
+        self._changed("Аварийно: голосование за резьбу сброшено, бонусы удалены")
+        self.ev.emit_settings()
 
     def reveal_next(self) -> None:
         if self.phase != "closed":
@@ -110,6 +135,7 @@ class Vote:
         self.st["reveal_step"] += 1
         if self.st["reveal_step"] >= n:
             self.st["revealed"] = True
+            self.ev.scores_changed({r["player_id"] for r in self.st["results"]})
         self._changed()
 
     # ------------------------------------------------------------------ игроки

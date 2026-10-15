@@ -288,3 +288,113 @@ def test_lipsync_script(tmp_path):
     assert max(early) < 10 < min(late)
     assert all(0 <= f["viseme"] <= 4 for f in data["frames"])
     json.dumps(data)
+
+
+def test_vote_host_out_of_scoring_gets_no_place(data_dir):
+    with client(data_dir) as c:
+        a, b = join(c, "Аня", "pumpkin-1"), join(c, "Паша", "pumpkin-2")
+        h = c.post("/api/join", json={"name": "Вед", "avatar_kind": "pumpkin", "avatar_ref": "pumpkin-8",
+                                      "as_host": True}).json()
+        ev = c.app.state.ev
+        for p in (a, b, h):
+            _pumpkin(ev, p["me"]["id"])
+        with c.websocket_connect("/ws?role=host") as host, \
+                c.websocket_connect(f"/ws?role=player&token={a['token']}") as wa, \
+                c.websocket_connect(f"/ws?role=player&token={b['token']}") as wb:
+            for w in (host, wa, wb):
+                recv_until(w, "snapshot")
+            cmd(host, "set_scene", scene="carve_vote")
+            cmd(host, "vote_start")
+            n = {e["player_id"]: e["n"] for e in ev.vote.st["entries"]}
+            cmd(wa, "vote", n=n[h["me"]["id"]])   # оба голосуют за тыкву ведущего
+            cmd(wb, "vote", n=n[h["me"]["id"]])
+            cmd(host, "vote_close")
+            res = {r["player_id"]: r for r in ev.vote.st["results"]}
+            assert res[h["me"]["id"]]["votes"] == 2 and res[h["me"]["id"]]["place"] is None
+            assert ev.total(h["me"]["id"]) == 0
+            # сброс голосования: бонусы удалены, тыквы снова можно менять
+            assert cmd(host, "vote_reset")["ok"]
+            assert ev.settings["carve_locked"] is False and ev.vote.phase == "idle"
+            assert cmd(host, "vote_start")["ok"]
+
+
+def test_timer_add_after_finish_restarts(data_dir):
+    with client(data_dir, speed=60) as c:
+        ev = c.app.state.ev
+        with c.websocket_connect("/ws?role=host") as host:
+            recv_until(host, "snapshot")
+            cmd(host, "set_scene", scene="timer")
+            cmd(host, "timer_set", minutes=0.05)
+            wait(host, "timer", lambda m: m["timer"]["finished"])
+            assert cmd(host, "timer_add", seconds=60)["ok"]
+            assert ev.timer.st["running"] and not ev.timer.st["finished"]
+
+
+def test_content_checker_case_sensitive_names(tmp_path):
+    from server.content_check import check
+    (tmp_path / "images" / "sorts").mkdir(parents=True)
+    Image.new("RGB", (8, 8)).save(tmp_path / "images" / "sorts" / "Butternut.jpg")
+    qs = "\n".join(
+        f"    - id: r2q{i:02d}\n      text: t\n      options: [a, b, c, d]\n      correct: 0\n"
+        f"      image: sorts/{'butternut' if i == 1 else 'Butternut'}.jpg" for i in range(1, 3))
+    (tmp_path / "quiz.yaml").write_text(
+        "rounds:\n  - id: r1\n    title: a\n    questions: []\n  - id: r2\n    title: b\n    questions:\n" + qs +
+        "\n  - id: r3\n    title: c\n    questions: []\n", encoding="utf-8")
+    (tmp_path / "facts.yaml").write_text("[]", encoding="utf-8")
+    errors, _ = check(tmp_path)
+    text = "\n".join(errors)
+    assert "регистр" in text          # sorts/butternut.jpg при файле Butternut.jpg
+    assert "нижнем регистре" in text  # имя с заглавной буквой
+
+
+def test_js_syntax():
+    import shutil
+    import subprocess
+
+    import pytest
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node не установлен")
+    r = subprocess.run([node, "--experimental-vm-modules", str(ROOT / "tools" / "check_js.mjs")],
+                       capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_numeric_fact_ids_are_strings(tmp_path):
+    from server.content import Content
+    (tmp_path / "facts.yaml").write_text("- id: 001\n  text: Факт\n", encoding="utf-8")
+    assert Content(tmp_path).fact("1")["id"] == "1"
+
+
+def test_timer_rejects_nan(data_dir):
+    with client(data_dir) as c:
+        with c.websocket_connect("/ws?role=host") as host:
+            recv_until(host, "snapshot")
+            cmd(host, "timer_set", minutes=5)
+            assert cmd(host, "timer_add", seconds="nan")["ok"] is False
+            assert cmd(host, "timer_set", minutes="inf")["ok"] is False
+        with c.websocket_connect("/ws?role=host") as host:
+            assert recv_until(host, "snapshot")["timer"]["running"] is True
+
+
+def test_carve_save_refused_if_vote_opened_meanwhile(data_dir):
+    from server import carve
+    with client(data_dir) as c:
+        a = join(c, "Аня", "pumpkin-1")
+        ev = c.app.state.ev
+        files = {f"{n}.png": png_bytes(256) for n in carve.MASK_NAMES}
+        files.update({f"{n}.jpg": jpeg(64, 64) for n in carve.SHOT_NAMES})
+        meta = carve.prepare(ev, a["me"]["id"], files, {"theta": 0, "phi": 1, "radius": 4})
+        ev._set("carve_locked", True)  # голосование открыли, пока писались файлы
+        import pytest
+        from server.state import CmdError
+        with pytest.raises(CmdError):
+            carve.commit(ev, a["me"]["id"], meta)
+        assert not carve.pumpkin_dir(ev, a["me"]["id"]).exists()
+        assert not list((data_dir / "pumpkins").glob("*.new-*"))
+
+
+def png_bytes(size):
+    buf = io.BytesIO()
+    Image.new("L", (size, size), 0).save(buf, "PNG")
+    return buf.getvalue()

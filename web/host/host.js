@@ -43,6 +43,7 @@ evening.append(
       el('button', { class: 'grow', onclick: () => run('reload_scene', {}, 'Сцена на ТВ перезагружена') }, 'Перезагрузить сцену'),
       el('button', { class: 'grow', onclick: () => run('skip_question', {}, 'Вопрос пропущен') }, 'Пропустить вопрос')),
     el('button', { style: { width: '100%', marginTop: '8px' }, onclick: () => { if (confirm('Сбросить игру? Очки за игру будут удалены, зачёт можно сыграть заново.')) run('game_reset', {}, 'Игра сброшена'); } }, 'Сбросить игру с падающими тыквами'),
+    el('button', { style: { width: '100%', marginTop: '8px' }, onclick: () => { if (confirm('Сбросить голосование за резьбу? Бонусы резьбы удалятся, тыквы снова можно менять, голосование — открыть заново.')) run('vote_reset', {}, 'Голосование сброшено'); } }, 'Сбросить голосование за резьбу'),
     el('h3', { style: { marginTop: '14px' } }, 'Исправить очки игрока'),
     box.adjPlayer, el('div', { style: { height: '6px' } }), adjAmount, el('div', { style: { height: '6px' } }), adjNote,
     el('button', { style: { width: '100%', marginTop: '6px' }, onclick: adjust }, 'Записать правку'),
@@ -117,7 +118,8 @@ function renderScenes() {
   } else {
     box.current.append(el('p', { class: 'muted' }, 'QR на скачивание фото — на экране. Сервер не выключать, пока гости скачивают.'));
   }
-  box.current.append(el('button', { style: { marginTop: '10px' }, onclick: () => setScene('ambient'), disabled: scene === 'ambient' }, '← В ambient'));
+  // в слайд-шоу по спеке только «Пауза/Продолжить» и «Закончить»
+  if (scene !== 'slideshow') box.current.append(el('button', { style: { marginTop: '10px' }, onclick: () => setScene('ambient'), disabled: scene === 'ambient' }, '← В ambient'));
 }
 
 // обновить раздел текущей сцены без перестройки (например, пришло новое состояние модуля)
@@ -270,7 +272,7 @@ function onMessage(m) {
     case 'head': S.head = m.head; refreshPanel(); break;
     case 'photo_added': case 'photo_changed': photos.reload(); break;
     case 'players': S.players = m.players; renderPlayers(); if (S.scene?.scene === 'carve_vote') refreshPanel(); break;
-    case 'settings': S.settings = m.settings; renderSettings(); break;
+    case 'settings': S.settings = m.settings; renderSettings(); refreshPanel(); break;
     case 'tv_count': S.tvCount = m.count; renderHeader(); break;
     case 'log':
       if (!S.logFilter || String(m.entry.player_id) === S.logFilter) {

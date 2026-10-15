@@ -108,7 +108,7 @@ function startLink(token) {
     token,
     onMessage,
     onStatus: (on) => { S.online = on; offlineBar(on); },
-    onAuthFailed: () => { store(TOKEN_KEY, null); renderJoin(); },
+    onAuthFailed: () => { store(TOKEN_KEY, null); teardown(); renderJoin(); },
   });
   S.link.connect();
 }
@@ -144,7 +144,7 @@ function onMessage(m) {
     case 'avatars_taken': S.taken = m.taken; break;
     case 'reset':
       store(TOKEN_KEY, null);
-      renderedKey = null;
+      teardown();
       toast('Вечер начат заново');
       renderJoin();
       break;
@@ -160,6 +160,16 @@ let bannerTimer = null;
 
 let renderedKey = null;
 
+// выход на экран входа: остановить сцены, вкладки и таймеры плашек
+function teardown() {
+  view?.unmount();
+  view = null;
+  tabView?.unmount();
+  tabView = null;
+  clearInterval(bannerTimer);
+  renderedKey = null;
+}
+
 function render(force = false) {
   if (!S.me || !S.scene) return;
   const key = S.scene.participating ? `p:${S.scene.scene}` : `tabs:${S.tab}`;
@@ -170,6 +180,7 @@ function render(force = false) {
     return;
   }
   renderedKey = key;
+  clearInterval(bannerTimer);
   view?.unmount();
   view = null;
   tabView?.unmount();

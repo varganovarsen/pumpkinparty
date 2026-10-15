@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { el, clear } from '/web/shared/util.js';
 import { loadModel, buildPumpkin, pumpkinUniforms, applyCandle, flickerAt, MaskBank } from '/web/shared/pumpkin3d.js';
 
-const FPS_MIN = 24;
+const FPS_MIN = 24;          // по умолчанию; берётся из config.yaml (carve.fps_fallback_threshold)
+const FPS_WARMUP = 5000;     // первые секунды не меряем: грузятся маски и компилируются шейдеры
 const FPS_WINDOW = 5000;
 const SLIDE_SECONDS = 4;
 
@@ -23,6 +24,7 @@ export function mount(root, ctx) {
   let mode = '3d';
   let pumpkins = [];        // {n, parts, mask, label}
   let slideTimer = null;
+  let bank = null;
   const camera = new THREE.PerspectiveCamera(32, 16 / 9, 0.1, 100);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x050302);
@@ -44,6 +46,7 @@ export function mount(root, ctx) {
 
   // ---------------------------------------------------------------- слайды (запасной вариант)
   function startSlides() {
+    if (mode === 'slides') return;
     mode = 'slides';
     cancelAnimationFrame(raf);
     canvas.classList.add('hidden');
@@ -76,7 +79,8 @@ export function mount(root, ctx) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     }
     const model = await loadModel();
-    const bank = new MaskBank(renderer, model, 1024);
+    bank?.dispose();
+    bank = new MaskBank(renderer, model, 1024);
     const n = entries.length;
     const spread = Math.min(Math.PI * 0.9, 0.42 * n);
     for (let i = 0; i < n; i++) {
@@ -107,6 +111,26 @@ export function mount(root, ctx) {
     camera.lookAt(0, -0.15, zMid);
   }
 
+  function startLive() {
+    if (mode === '3d') return;
+    mode = '3d';
+    clearTimeout(slideTimer);
+    slides.classList.add('hidden');
+    canvas.classList.remove('hidden');
+    labels.classList.remove('hidden');
+    fpsStart = 0;
+    frames = 0;
+    builtAt = performance.now();
+    raf = requestAnimationFrame(loop);
+  }
+
+  function applyMode() {
+    if (ctx.settings.alley_slides) startSlides();
+    else if (mode === 'slides' && forced) startLive();
+    forced = !!ctx.settings.alley_slides;
+  }
+  let forced = false;
+  let builtAt = performance.now();
   let fpsStart = 0;
   let frames = 0;
   let last = performance.now();
@@ -132,22 +156,26 @@ export function mount(root, ctx) {
       p.label.style.top = `${(-v.y * 0.5 + 0.5) * 100}%`;
     }
     if (renderer) renderer.render(scene, camera);
-    // запасной режим по частоте кадров
+    // запасной режим по частоте кадров (после прогрева)
+    if (t - builtAt < FPS_WARMUP || !pumpkins.length) return;
     if (!fpsStart) fpsStart = t;
     frames++;
     if (t - fpsStart >= FPS_WINDOW) {
       const fps = (frames * 1000) / (t - fpsStart);
-      if (fps < FPS_MIN && pumpkins.length) { console.warn(`Аллея: ${fps.toFixed(1)} к/с, переход на снимки`); startSlides(); return; }
+      if (fps < (ctx.config?.fps_fallback_threshold || FPS_MIN)) { console.warn(`Аллея: ${fps.toFixed(1)} к/с, переход на снимки`); startSlides(); return; }
       fpsStart = t;
       frames = 0;
     }
   }
 
   header();
-  build().then(() => { raf = requestAnimationFrame(loop); }).catch((e) => { console.error(e); startSlides(); });
+  build().then(() => {
+    builtAt = performance.now();
+    if (ctx.settings.alley_slides) { forced = true; startSlides(); } else raf = requestAnimationFrame(loop);
+  }).catch((e) => { console.error(e); startSlides(); });
 
   return {
-    update: header,
+    update() { header(); applyMode(); },
     onMessage(m) {
       if (m.t !== 'vote') return;
       header();
@@ -157,8 +185,13 @@ export function mount(root, ctx) {
       alive = false;
       cancelAnimationFrame(raf);
       clearTimeout(slideTimer);
-      for (const p of pumpkins) p.mask?.dispose();
+      for (const p of pumpkins) {
+        p.mask?.dispose();
+        p.parts.group.traverse((o) => { if (o.isMesh) { o.material.dispose?.(); if (o.geometry !== p.model?.body) o.geometry.dispose?.(); } });
+      }
+      bank?.dispose();
       renderer?.dispose();
+      renderer?.forceContextLoss(); // освободить WebGL-контекст сразу, а не при сборке мусора
     },
   };
 }

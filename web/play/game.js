@@ -8,6 +8,16 @@ const BASKET_W = 0.24;   // доля ширины поля
 const ITEM_R = 0.055;    // радиус предмета, доля ширины
 const CATCH_Y = 0.86;    // линия корзины, доля высоты
 
+// звуки на телефоне: iOS разрешит их после первого касания поля игры
+const sfx = {};
+function sound(name) {
+  try {
+    const a = sfx[name] || (sfx[name] = new Audio(`/assets/sfx/${name}.mp3`));
+    a.currentTime = 0;
+    a.play().catch(() => {});
+  } catch { /* без звука */ }
+}
+
 const img = {};
 for (const s of SPRITES) { img[s] = new Image(); img[s].src = `/assets/game/${s}.png`; }
 
@@ -29,7 +39,10 @@ export function mountGame(root, link) {
     const key = `${g.mode}:${g.start_at_ms}`;
     if (run?.key === key) return;
     run = { key, items: g.items, points: g.points, caught: new Set(), evaluated: new Set(), score: 0, sent: false,
-      basket: 0.5, lastProgress: 0 };
+      basket: 0.5, lastProgress: 0, lastTau: null };
+    // зашли посреди игры (перезагрузка, возврат): уже упавшее не засчитывается задним числом
+    const tau0 = (link.serverNow() - g.start_at_ms) / 1000;
+    for (const it of run.items) if (it.land <= tau0) run.evaluated.add(it.i);
     clear(box);
     const canvas = el('canvas', { class: 'game-canvas' });
     const hud = el('div', { class: 'game-hud' });
@@ -71,6 +84,11 @@ export function mountGame(root, link) {
       run.big.textContent = tau < 0.8 ? 'Старт!' : '';
     }
     const r = ITEM_R * W;
+    // экран засыпал или вкладка была в фоне: пропущенное за «прыжок» времени не ловится
+    if (run.lastTau !== null && tau - run.lastTau > 0.35) {
+      for (const it of run.items) if (it.land > run.lastTau && it.land <= tau) run.evaluated.add(it.i);
+    }
+    run.lastTau = tau;
     for (const it of run.items) {
       if (run.evaluated.has(it.i)) continue;
       if (tau >= it.land) {
@@ -79,6 +97,7 @@ export function mountGame(root, link) {
           run.caught.add(it.i);
           run.score = Math.max(0, run.score + run.points[it.kind]);
           vibrate(it.kind === 'rotten' ? [40, 30, 40] : 25);
+          sound(it.kind === 'rotten' ? 'game-rotten' : it.kind === 'golden' ? 'game-golden' : 'game-catch');
         }
         continue;
       }

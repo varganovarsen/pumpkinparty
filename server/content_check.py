@@ -9,6 +9,23 @@ import yaml
 BUBBLE_MAX = 220
 ID_RE = re.compile(r"^[a-z0-9_]+$")
 MIN_QUIZ_FACTS = 12
+FILE_RE = re.compile(r"^[a-z0-9_./-]+$")
+
+
+def file_problem(base: Path, rel: str) -> str | None:
+    """Ошибка имени файла: регистр и пробелы (на Linux регистр важен), точное совпадение с диском."""
+    if not FILE_RE.match(rel):
+        return "имя файла: только латиница в нижнем регистре, цифры, _ - . / (без пробелов)"
+    cur = base
+    for part in Path(rel).parts:
+        try:
+            names = {p.name for p in cur.iterdir()}
+        except OSError:
+            return "нет файла"
+        if part not in names:
+            return "нет файла (проверьте регистр букв)" if part.lower() in {n.lower() for n in names} else "нет файла"
+        cur = cur / part
+    return None
 
 
 def _load(path: Path, errors: list[str]):
@@ -54,7 +71,11 @@ def check_facts(content_dir: Path, errors: list[str], warnings: list[str]) -> No
             ap = content_dir / "audio" / str(audio)
             if not str(audio).endswith(".mp3"):
                 errors.append(f"{where}: озвучка только mp3")
-            if not ap.exists():
+            if not FILE_RE.match(str(audio)):
+                errors.append(f"{where}: audio — латиница в нижнем регистре без пробелов")
+            elif file_problem(content_dir / "audio", str(audio)) == "нет файла (проверьте регистр букв)":
+                errors.append(f"{where}: audio/{audio} — регистр букв не совпадает с файлом")
+            elif not ap.exists():
                 warnings.append(f"{where}: нет файла audio/{audio} (голова будет молчать)")
             elif not ap.with_suffix(".lipsync.json").exists():
                 warnings.append(f"{where}: нет audio/{ap.stem}.lipsync.json (запустить tools/make_lipsync.py)")
@@ -123,8 +144,9 @@ def check_quiz(content_dir: Path, errors: list[str], warnings: list[str]) -> Non
             img = q.get("image")
             if img:
                 images.append(str(img))
-                if not (content_dir / "images" / str(img)).exists():
-                    errors.append(f"{qw}: нет файла images/{img}")
+                problem = file_problem(content_dir / "images", str(img))
+                if problem:
+                    errors.append(f"{qw}: images/{img}: {problem}")
             elif ri == 2:
                 errors.append(f"{qw}: в раунде 2 у вопроса должна быть image")
         if ri == 2 and len(set(images)) != len(images):

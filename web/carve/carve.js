@@ -30,6 +30,21 @@ const S = {
   dirty: true,
 };
 
+// ---------------------------------------------------------------- голосование началось: тыквы больше не меняются
+function setLocked(locked) {
+  S.locked = locked;
+  let b = document.getElementById('locked-bar');
+  if (!b) {
+    b = el('div', { id: 'locked-bar', class: 'locked-bar hidden' }, '🔒 Голосование началось — тыквы больше не сохраняются');
+    document.body.append(b);
+  }
+  b.classList.toggle('hidden', !locked);
+  const save = document.getElementById('save');
+  const done = document.getElementById('done');
+  if (save) save.disabled = locked;
+  if (done) done.disabled = locked;
+}
+
 // ---------------------------------------------------------------- выбор игрока
 function renderPlayers() {
   const box = clear($('players'));
@@ -53,6 +68,7 @@ const link = new Link({
       S.players = m.players;
       renderPlayers();
     }
+    if (m.t === 'snapshot' || m.t === 'settings') setLocked(!!m.settings?.carve_locked);
     if (m.t === 'reset' && S.player) { toast('Вечер начат заново'); closeEditor(true); }
   },
 });

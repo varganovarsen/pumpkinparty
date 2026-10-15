@@ -1,6 +1,7 @@
 """Таймер перерывов и финал (модуль 07): сцены timer, rating_reveal, slideshow, final_photo."""
 from __future__ import annotations
 
+import math
 import random
 from typing import TYPE_CHECKING
 
@@ -31,7 +32,7 @@ class Timer:
 
     def set(self, minutes, label: str | None = None) -> None:
         m = float(minutes)
-        if not 0 < m <= 180:
+        if not math.isfinite(m) or not 0 < m <= 180:
             raise CmdError("От 1 секунды до 3 часов", "bad_value")
         if label is not None:
             self.st["label"] = str(label).strip()[:LABEL_MAX]
@@ -50,7 +51,11 @@ class Timer:
 
     def add(self, seconds) -> None:
         s = float(seconds)
-        if self.st["running"]:
+        if not math.isfinite(s) or not -3600 <= s <= 3600:
+            raise CmdError("Неверное число секунд", "bad_value")
+        if self.st["finished"]:  # время вышло, а ведущий дал ещё минуту — снова идёт
+            self.st.update(end_at=self.ev.clock.now() + s, left=None, running=True, finished=False)
+        elif self.st["running"]:
             self.st["end_at"] = max(self.ev.clock.now(), self.st["end_at"]) + s
         elif self.st["left"] is not None:
             self.st["left"] += s
@@ -153,7 +158,8 @@ class Finale:
         out = {"step": st["step"], "groups_total": len(st["groups"]),
                "slideshow_paused": st["slideshow_paused"], "final_photo": None}
         if st["final_photo_id"]:
-            out["final_photo"] = self.ev.photos.get(st["final_photo_id"])
+            photo = self.ev.photos.get(st["final_photo_id"])
+            out["final_photo"] = photo if photo and not photo["hidden"] else None  # скрытое ведущим не показываем
         shown = st["groups"] if role == "host" else st["groups"][: st["step"] + 1]
         out["groups"] = shown
         if role == "host":

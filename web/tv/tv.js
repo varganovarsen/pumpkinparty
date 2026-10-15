@@ -20,7 +20,7 @@ const MODULES = ['quiz', 'game', 'vote', 'timer', 'finale'];
 
 const stage = document.getElementById('stage');
 const overlay = document.getElementById('overlay');
-const ctx = { link: null, scene: null, settings: {}, players: [], joinUrl: '', stubs: [], head: null, quiz: null };
+const ctx = { link: null, scene: null, settings: {}, players: [], joinUrl: '', stubs: [], head: null, quiz: null, config: {} };
 let current = null; // {name, mod, inst}
 let mounting = Promise.resolve();
 
@@ -42,6 +42,7 @@ async function mountScene(force = false) {
     return;
   }
   current?.inst.unmount?.();
+  current = null; // если монтирование прервётся (сцену уже сменили), не оставить «мёртвую» сцену
   clear(stage);
   const path = SCENE_MODULES[name] || './scenes/stub.js';
   let mod;
@@ -65,9 +66,16 @@ function onMessage(m) {
   switch (m.t) {
     case 'snapshot':
       ctx.scene = m.scene; ctx.settings = m.settings; ctx.players = m.players;
-      ctx.joinUrl = m.join_url; ctx.stubs = m.stubs; ctx.head = m.head;
+      ctx.joinUrl = m.join_url; ctx.stubs = m.stubs; ctx.head = m.head; ctx.config = m.client_config || {};
       for (const name of MODULES) ctx[name] = m[name];
-      remount(true);
+      if (current && current.name === m.scene.scene) {
+        // переподключение: та же сцена — обновить состояние, не пересоздавая (видео, аллея, звуки)
+        current.inst.update?.(ctx);
+        for (const name of MODULES) current.inst.onMessage?.({ t: name, [name]: m[name] });
+        current.inst.onMessage?.({ t: 'head', head: m.head });
+      } else {
+        remount(true);
+      }
       break;
     case 'scene':
       ctx.scene = m;

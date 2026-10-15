@@ -61,6 +61,9 @@ export function votePanel(run) {
       clear(root);
       const scene = S.scene?.scene;
       if (scene === 'carve_vote') {
+        const slides = !!S.settings?.alley_slides;
+        root.append(el('div', { class: 'toggle' }, el('div', {}, 'Аллея на ТВ', el('div', { class: 'muted' }, slides ? 'снимки (слайды)' : 'живое 3D; само переключится на снимки, если ТВ не тянет')),
+          el('button', { class: 'switch', onclick: () => run('set_setting', { key: 'alley_slides', value: !slides }) }, slides ? '→ 3D' : '→ Слайды')));
         const txt = { idle: `Тыкв к голосованию: ${(S.players || []).filter((p) => p.pumpkin_version).length}`,
           open: `Голосование идёт: проголосовали ${v.voted_count} из ${v.voters_total}`, closed: 'Голосование закрыто' }[v.phase];
         root.append(el('p', {}, txt));
@@ -99,8 +102,13 @@ export function timerPanel(run) {
   let link = null;
   function tick(t) {
     cancelAnimationFrame(raf);
+    if (!root.isConnected) return; // ушли из сцены «Перерыв» — цикл не нужен
     if (t.finished) left.textContent = 'время вышло';
-    else if (t.running) { left.textContent = fmtClock(t.end_at_ms - link.serverNow()); raf = requestAnimationFrame(() => tick(t)); }
+    else if (t.running) {
+      const ms = t.end_at_ms - link.serverNow();
+      left.textContent = fmtClock(ms);
+      if (ms > 0) raf = requestAnimationFrame(() => tick(t));
+    }
     else if (t.left_ms != null) left.textContent = `${fmtClock(t.left_ms)} (пауза)`;
     else left.textContent = '—';
   }

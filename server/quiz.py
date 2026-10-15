@@ -323,8 +323,8 @@ class Quiz:
             p = self.ev.players.get(pid)
             if p and p.in_scoring:
                 rows.append({"player_id": pid, "name": p.name, "avatar_url": p.avatar_url, "points": pts})
-        random.shuffle(rows)  # порядок внутри ничьей случайный
-        rows.sort(key=lambda x: -x["points"])
+        # внутри ничьей — стабильно по имени (рейтинг рассылается каждому отдельно и не должен «прыгать»)
+        rows.sort(key=lambda x: (-x["points"], x["name"].casefold()))
         place, prev = 0, None
         for i, row in enumerate(rows, 1):
             if row["points"] != prev:

@@ -305,6 +305,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         for name in carve.FILES:
             f = form.get(name)
             if f is not None and hasattr(f, "read"):
+                if (getattr(f, "size", 0) or 0) > carve.SHOT_MAX_BYTES * 4:
+                    return err(CmdError(f"Файл {name} слишком большой", "too_big"), 413)
                 files[name] = await f.read()
         try:
             camera = json.loads(str(form.get("camera", "{}")))
@@ -407,8 +409,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
             for pid in pumpkin_ids:
                 pl = ev.players.get(pid)
                 for shot in carve.SHOT_NAMES:
-                    extra.append((carve.pumpkin_dir(ev, pid) / f"{shot}.jpg",
-                                  f"tykva-{(pl.name if pl else pid)}-{shot}.jpg"))
+                    safe = re.sub(r"[^\w-]+", "_", pl.name if pl else str(pid)).strip("_") or str(pid)
+                    extra.append((carve.pumpkin_dir(ev, pid) / f"{shot}.jpg", f"tykva-{safe}-{shot}.jpg"))
         if not ids and not extra:
             return err(CmdError("Ничего не выбрано", "empty"), 400)
         path = await asyncio.get_running_loop().run_in_executor(None, ev.photos.zip_file, ids, extra)
@@ -439,6 +441,9 @@ def create_app(cfg: Config | None = None) -> FastAPI:
             {"id": "phones", "title": "Подключено телефонов", "status": INFO,
              "detail": f"{phones} из {len(ev.players)} игроков", "items": []},
         ]
+        if ev.photos.last_shot_error:
+            items.append({"id": "webcam_runtime", "title": "Случайные кадры вебки", "status": FAIL,
+                          "detail": f"последний кадр не снят: {ev.photos.last_shot_error}", "items": []})
         return {"items": items, "summary": {
             "fail": sum(i["status"] == FAIL for i in items), "warn": sum(i["status"] == WARN for i in items),
         }}

@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import logging
 import random
 import re
 import secrets
@@ -22,6 +23,8 @@ from .db import DB
 
 if TYPE_CHECKING:
     from .ws import Hub
+
+log = logging.getLogger("pumpkin.state")
 
 SCENES = [
     "ambient", "quiz", "game", "timer", "carve_vote", "carve_reveal",
@@ -142,6 +145,7 @@ class Evening:
             "light_mode": bool(c["ambient"]["light_mode"]),
             "new_photo_card": bool(c["ambient"]["new_photo_card"]),
             "shots_enabled": True,
+            "alley_slides": False,
             "carve_locked": False,
             "head_next_at": None,
         }
@@ -427,14 +431,19 @@ class Evening:
 
     def tick(self) -> None:
         """Таймеры всех модулей (вызывается из app.tick_loop по серверному времени)."""
-        for mod in (self.quiz, self.game, self.timer, self.photos):
-            mod.tick()
-        self.head_tick()
+        # каждый модуль отдельно: сбой одного не должен останавливать остальные таймеры
+        for name, fn in (("quiz", self.quiz.tick), ("game", self.game.tick), ("timer", self.timer.tick),
+                         ("photos", self.photos.tick), ("head", self.head_tick)):
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                log.exception("Сбой таймера модуля %s", name)
 
     # ------------------------------------------------------------------ настройки ведущего
     HOST_SETTINGS = {
         "host_in_scoring": bool, "hide_total": bool, "head_mode": str, "head_enabled": bool,
         "head_interval_minutes": float, "light_mode": bool, "new_photo_card": bool, "shots_enabled": bool,
+        "alley_slides": bool,
     }
 
     def set_setting(self, key: str, value: Any) -> None:
@@ -465,7 +474,7 @@ class Evening:
                 self.emit_quiz()  # рейтинг на экране мог показывать общий итог
 
     def public_settings(self) -> dict:
-        keys = list(self.HOST_SETTINGS) + ["quiz_started"]
+        keys = list(self.HOST_SETTINGS) + ["quiz_started", "carve_locked"]
         return {k: self.settings[k] for k in keys}
 
     def adjust_score(self, player_id: int, amount: int, note: str) -> None:

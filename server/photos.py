@@ -38,6 +38,7 @@ class Photos:
         self.ev = ev
         self.root = ev.data_dir / "photos"
         self.shot_running = False
+        self.last_shot_error: str | None = None  # для /check: последний неудачный кадр вебки
         self._ensure_next_shot()
 
     # ------------------------------------------------------------------ файлы
@@ -124,8 +125,9 @@ class Photos:
         """Оригинал → обрезка по центру до 4:3 → рамка заказчика поверх → JPEG q92 (в потоке)."""
         self._dirs()
         img = images.open_upload(data)
-        orig = secrets.token_hex(8)
-        img.save(self.root / "original" / f"{orig}.jpg", "JPEG", quality=95)
+        # оригинал — исходные байты как есть (JPEG/HEIC с камеры, со всеми EXIF)
+        ext = "heic" if data[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1", b"ftypmsf1") else "jpg"
+        (self.root / "original" / f"{secrets.token_hex(8)}.{ext}").write_bytes(data)
         w, h = img.size
         if w / h > 4 / 3:
             nw = round(h * 4 / 3)
@@ -173,9 +175,11 @@ class Photos:
                 jpg = await loop.run_in_executor(None, webcam.snapshot, int(self.ev.cfg["webcam_device"]))
                 files = await loop.run_in_executor(None, lambda: self.prepare(Image.open(io.BytesIO(jpg))))
             except Exception as e:  # noqa: BLE001 — нет вебки: пишем в журнал, повтор через интервал
+                self.last_shot_error = f"{e}"
                 self.ev.log(f"Вебка: кадр не снят ({e})")
                 self.ev.emit("tv", {"t": "shot", "stage": "failed"})
                 return
+            self.last_shot_error = None
             photo = self.commit(files, "webcam", None)
             self.ev.emit("tv", {"t": "shot", "stage": "taken", "photo": photo, "seconds": SHOT_SHOW_SECONDS})
         finally:

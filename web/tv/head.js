@@ -120,6 +120,7 @@ export function createHead(container, ctx) {
   }
 
   function show(data, resumed = false) {
+    if (state && state.factId === data.fact_id) return; // тот же факт уже на экране (переподключение)
     if (state) finish();
     const elapsed = ctx.link.serverNow() / 1000 - data.called_at;
     if (resumed && elapsed > data.seconds) return;

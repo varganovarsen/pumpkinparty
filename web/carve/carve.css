@@ -34,3 +34,4 @@ button { touch-action: manipulation; }
 .preview button { min-width: 160px; min-height: 56px; }
 
 .busy { position: absolute; inset: 0; display: grid; place-items: center; background: #000a; font-size: 1.4rem; z-index: 5; }
+.locked-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 20; background: var(--warn); color: #1b0e04; font-weight: 700; text-align: center; padding: 8px; }

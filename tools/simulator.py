@@ -488,14 +488,14 @@ def tiny_png(size: int, spots: int) -> bytes:
     return buf.getvalue()
 
 
-def competition_places(votes: dict[int, int], bonus: list[int]) -> dict[int, int]:
-    """Независимый от сервера расчёт бонусов: места 1,1,3…, без голосов — без места."""
-    out = {}
-    for pid, v in votes.items():
+def competition_places(votes: dict[int, int], bonus: list[int], out_of_scoring: set[int]) -> dict[int, int]:
+    """Независимый от сервера расчёт бонусов: места 1,1,3…, без голосов и вне зачёта — без места."""
+    ranked = {pid: v for pid, v in votes.items() if pid not in out_of_scoring}
+    out = {pid: 0 for pid in votes}
+    for pid, v in ranked.items():
         if v <= 0:
-            out[pid] = 0
             continue
-        place = 1 + sum(1 for w in votes.values() if w > v)
+        place = 1 + sum(1 for w in ranked.values() if w > v)
         out[pid] = bonus[place - 1] if place <= len(bonus) else 0
     return out
 
@@ -555,7 +555,7 @@ async def scenario_finale(base: str, roster: list, host_player: tuple, expected:
         rep.check(ok, f"игра ({mode}) закончилась", f"игра ({mode}) не закончилась")
 
     print("Резьба: тыквы, голосование, итоги")
-    with_pumpkin = clients[1:6]  # пятеро сохранили тыквы
+    with_pumpkin = clients[0:6]  # шестеро сохранили тыквы, включая ведущего вне зачёта
     from PIL import Image
     shot = io.BytesIO()
     Image.new("RGB", (64, 64), (120, 40, 10)).save(shot, "JPEG")
@@ -593,7 +593,7 @@ async def scenario_finale(base: str, roster: list, host_player: tuple, expected:
     results = (module(host, "vote") or {}).get("results", [])
     for res in results:
         votes_for[res["player_id"]] = res["votes"]
-    bonuses = competition_places(votes_for, [500, 300, 100])
+    bonuses = competition_places(votes_for, [500, 300, 100], {host_player[2]})
     server_bonus = {res["player_id"]: res["bonus"] for res in results}
     rep.check(bonuses == server_bonus, "места и бонусы резьбы совпали с независимым расчётом",
               f"бонусы резьбы расходятся: ожидалось {bonuses}, сервер {server_bonus}")
@@ -694,6 +694,8 @@ def main() -> None:
     ap.add_argument("--scenario", choices=["core", "evening"], default="evening")
     ap.add_argument("--url", help="адрес уже запущенного сервера (иначе поднимается свой)")
     args = ap.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")  # Windows: вывод в файл/pipe не в cp1251
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     os.chdir(ROOT)

@@ -78,9 +78,10 @@ async function fileToCanvas(file) {
     try {
       src = await new Promise((res, rej) => {
         const im = new Image();
-        im.onload = () => res(im);
-        im.onerror = rej;
-        im.src = URL.createObjectURL(file);
+        const u = URL.createObjectURL(file);
+        im.onload = () => { URL.revokeObjectURL(u); res(im); };
+        im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('bad image')); };
+        im.src = u;
       });
     } catch {
       // браузер не открыл (HEIC на Android): сервер переведёт в JPEG
@@ -97,6 +98,7 @@ async function fileToCanvas(file) {
   c.width = Math.round(w * k);
   c.height = Math.round(h * k);
   c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  src.close?.(); // освободить память ImageBitmap (Safari быстро перезагружает вкладку при нехватке)
   return c;
 }
 
@@ -285,6 +287,7 @@ export function mountPhotoTab(root, { link, getToken, stickers }) {
       el('button', { class: 'big-btn', onclick: () => finish(false) }, '⬇ Только скачать себе'));
 
     async function finish(toAlbum) {
+      clearTimeout(saveTimer); // отложенная запись черновика не должна воскресить уже сохранённое фото
       select(null);
       const blob = await stage.toBlob({ pixelRatio: exportScale, mimeType: 'image/jpeg', quality: 0.9 });
       if (toAlbum) {
@@ -307,10 +310,12 @@ export function mountPhotoTab(root, { link, getToken, stickers }) {
   }
 
   // ---------------------------------------------------------------- результат: сохранить на телефон
+  let resultUrl = null;
   function showResult(blob, inAlbum) {
     editor?.stage.destroy();
     editor = null;
-    const url = URL.createObjectURL(blob);
+    if (resultUrl) URL.revokeObjectURL(resultUrl);
+    const url = resultUrl = URL.createObjectURL(blob);
     const file = new File([blob], 'tykvenny-spas.jpg', { type: 'image/jpeg' });
     const canShare = navigator.canShare?.({ files: [file] });
     clear(box).append(el('div', { class: 'card center' },
@@ -323,5 +328,5 @@ export function mountPhotoTab(root, { link, getToken, stickers }) {
   }
 
   start();
-  return { unmount() { editor?.stage.destroy(); } };
+  return { unmount() { editor?.stage.destroy(); if (resultUrl) URL.revokeObjectURL(resultUrl); } };
 }

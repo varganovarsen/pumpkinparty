@@ -42,13 +42,31 @@ SERVER_PID=""
 if [ -f data/server.pid ] && kill -0 "$(cat data/server.pid)" 2>/dev/null && health; then
   echo "Сервер уже запущен (pid $(cat data/server.pid))."
 else
-  "$VPY" -m server >>data/logs/stdout.log 2>&1 &
+  # Супервизор: если сервер упадёт, через 2 с поднимется снова (вечер продолжится с диска).
+  # Остановить насовсем: Ctrl+C здесь или tools/remote.sh <хост> stop (кладёт data/.stop).
+  rm -f data/.stop
+  (
+    while true; do
+      "$VPY" -m server >>data/logs/stdout.log 2>&1
+      code=$?
+      [ -f data/.stop ] && break
+      echo "$(date '+%F %T') сервер завершился (код $code), перезапуск через 2 с" >>data/logs/stdout.log
+      sleep 2
+    done
+  ) &
   SERVER_PID=$!
-  trap '[ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null' INT TERM
+  echo "$SERVER_PID" > data/supervisor.pid
+  stop_all() {
+    touch data/.stop
+    [ -f data/server.pid ] && kill "$(cat data/server.pid)" 2>/dev/null
+    kill "$SERVER_PID" 2>/dev/null
+    rm -f data/supervisor.pid
+  }
+  trap 'stop_all; exit 0' INT TERM
   for _ in $(seq 1 60); do
     health && break
-    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-      echo "Сервер не запустился, см. data/logs/stdout.log"; tail -n 20 data/logs/stdout.log; exit 1
+    if [ -f data/logs/stdout.log ] && [ "$(grep -c 'сервер завершился' data/logs/stdout.log)" -gt 2 ] && ! health; then
+      echo "Сервер не запускается, см. data/logs/stdout.log"; tail -n 20 data/logs/stdout.log; stop_all; exit 1
     fi
     sleep 0.5
   done

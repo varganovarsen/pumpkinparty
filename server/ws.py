@@ -91,6 +91,13 @@ class Hub:
         if c.role == "tv":
             snap["head"] = ev.head_snapshot()
             snap["stubs"] = self.stubs()
+            cfg = ev.cfg
+            # ключи config.yaml, которые нужны экрану ТВ
+            snap["client_config"] = {
+                "fps_fallback_threshold": cfg["carve"]["fps_fallback_threshold"],
+                "slideshow_seconds": cfg["slideshow"]["seconds_per_photo"],
+                "new_photo_card_seconds": cfg["ambient"]["new_photo_card_seconds"],
+            }
         if c.role == "host":
             snap["log"] = ev.recent_log()
             snap["scenes"] = [{"id": s, "title": SCENE_TITLES[s]} for s in SCENES]
@@ -130,9 +137,9 @@ class Hub:
             self.ev.set_connected(conn.player_id, +1)
         if role == "tv":
             self.ev.emit("host", {"t": "tv_count", "count": self.count("tv")})
-        conn.send(self.snapshot(conn))
         writer = asyncio.create_task(self._writer(conn))
         try:
+            conn.send(self.snapshot(conn))  # внутри try: сбой снимка не оставит «призрачное» соединение
             while True:
                 raw = await ws.receive_text()
                 try:
@@ -186,6 +193,9 @@ class Hub:
         except (KeyError, TypeError, ValueError) as e:
             log.warning("bad cmd %s: %s", name, e)
             conn.send({"t": "reply", "id": rid, "ok": False, "code": "bad_request", "error": "Неверная команда"})
+        except Exception:  # noqa: BLE001 — любой сбой: ответить, а не рвать соединение
+            log.exception("Сбой команды %s", name)
+            conn.send({"t": "reply", "id": rid, "ok": False, "code": "server_error", "error": "Ошибка на сервере, см. журнал"})
 
 
 # ---------------------------------------------------------------------- обработчики
@@ -260,6 +270,7 @@ HOST_EXTRA: dict[str, Callable] = {
     "vote_start": _in_scene("carve_vote")(lambda hub, c, m: hub.ev.vote.start()),
     "vote_close": _in_scene("carve_vote")(lambda hub, c, m: hub.ev.vote.close()),
     "vote_reveal": _in_scene("carve_reveal")(lambda hub, c, m: hub.ev.vote.reveal_next()),
+    "vote_reset": lambda hub, c, m: hub.ev.vote.reset(),
     # таймер
     "timer_set": lambda hub, c, m: hub.ev.timer.set(m["minutes"], m.get("label")),
     "timer_pause": lambda hub, c, m: hub.ev.timer.pause(bool(m.get("paused", True))),

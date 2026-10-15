@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import json
+import secrets
 import shutil
 from pathlib import Path
 
@@ -51,11 +52,14 @@ def versions(ev: Evening) -> dict[int, int]:
 def _mask(data: bytes, name: str) -> tuple[bytes, tuple[int, int]]:
     try:
         img = Image.open(io.BytesIO(data))
+        # размер проверяется по заголовку, до распаковки (огромная картинка не съест память)
+        if img.width != img.height or not 64 <= img.width <= MASK_MAX:
+            raise CmdError(f"Маска {name}: неверный размер {img.size}", "bad_mask")
         img.load()
+    except CmdError:
+        raise
     except Exception as e:  # noqa: BLE001
         raise CmdError(f"Маска {name} не читается", "bad_mask") from e
-    if img.width != img.height or not 64 <= img.width <= MASK_MAX:
-        raise CmdError(f"Маска {name}: неверный размер {img.size}", "bad_mask")
     img = img.convert("L")
     buf = io.BytesIO()
     img.save(buf, "PNG", optimize=True)
@@ -67,7 +71,11 @@ def _shot(data: bytes, name: str) -> bytes:
         raise CmdError(f"Снимок {name} слишком большой", "bad_shot")
     try:
         img = Image.open(io.BytesIO(data))
+        if max(img.size) > 4096:
+            raise CmdError(f"Снимок {name} слишком большой", "bad_shot")
         img.load()
+    except CmdError:
+        raise
     except Exception as e:  # noqa: BLE001
         raise CmdError(f"Снимок {name} не читается", "bad_shot") from e
     buf = io.BytesIO()
@@ -103,25 +111,35 @@ def prepare(ev: Evening, player_id: int, files: dict[str, bytes], camera: dict) 
     for n in SHOT_NAMES:
         out[f"{n}.jpg"] = _shot(files[f"{n}.jpg"], n)
 
-    final = pumpkin_dir(ev, p.id)
-    tmp = final.with_name(f"{p.id}.new")
-    old = final.with_name(f"{p.id}.old")
-    shutil.rmtree(tmp, ignore_errors=True)
+    # файлы пишутся во временную папку; подмена — в commit(), в цикле событий, после повторной проверки
+    tmp = pumpkin_dir(ev, p.id).with_name(f"{p.id}.new-{secrets.token_hex(4)}")
     tmp.mkdir(parents=True)
     for name, data in out.items():
         (tmp / name).write_bytes(data)
-    shutil.rmtree(old, ignore_errors=True)
-    if final.exists():
-        final.rename(old)
-    tmp.rename(final)
-    shutil.rmtree(old, ignore_errors=True)
-    return {"camera": cam, "mask_size": sizes.pop()[0]}
+    return {"camera": cam, "mask_size": sizes.pop()[0], "_tmp": str(tmp)}
 
 
 def commit(ev: Evening, player_id: int, meta: dict) -> dict:
+    tmp = Path(meta.pop("_tmp"))
     p = ev.players.get(int(player_id))
-    if not p:  # вечер сбросили, пока писали файлы
-        raise CmdError("Нет такого игрока", "not_found")
+    if not p or ev.settings.get("carve_locked"):  # вечер сбросили или открыли голосование, пока писали файлы
+        shutil.rmtree(tmp, ignore_errors=True)
+        if not p:
+            raise CmdError("Нет такого игрока", "not_found")
+        raise CmdError("Голосование уже началось, тыквы больше не меняются", "locked")
+    final = pumpkin_dir(ev, p.id)
+    old = final.with_name(f"{p.id}.old")
+    try:
+        shutil.rmtree(old, ignore_errors=True)
+        if final.exists():
+            final.rename(old)
+        tmp.rename(final)
+    except OSError as e:  # Windows: файл тыквы сейчас кто-то скачивает
+        shutil.rmtree(tmp, ignore_errors=True)
+        if old.exists() and not final.exists():
+            old.rename(final)
+        raise CmdError("Файлы тыквы заняты, нажмите «Сохранить» ещё раз", "busy") from e
+    shutil.rmtree(old, ignore_errors=True)
     row = ev.db.one("SELECT version FROM pumpkins WHERE player_id=?", (p.id,))
     version = (row["version"] if row else 0) + 1
     data = json.dumps(meta)

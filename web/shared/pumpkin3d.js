@@ -672,6 +672,13 @@ export class MaskBank {
     r.setRenderTarget(prev);
   }
 
+  dispose() {
+    this.coverage.dispose();
+    this.raw.dispose();
+    this.compose.material.dispose();
+    this.dilate.material.dispose();
+  }
+
   // Вернуть новую текстуру маски для показа (PNG через, глубина).
   async load(throughUrl, depthUrl) {
     const load = (url) => new Promise((res, rej) => new THREE.TextureLoader().load(url, (t) => {
