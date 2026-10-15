@@ -86,3 +86,84 @@ body { font-size: 2.2vh; }
 .qt-row .place { width: 4vh; color: var(--muted); }
 .hidden-total p { font-size: 3.6vh; text-align: center; margin-top: 10vh; }
 .quiz-tv .qt-big:first-child { margin-top: 10vh; }
+
+/* случайный кадр вебки */
+.shot-overlay { position: absolute; inset: 0; display: grid; place-items: center; background: #000a; z-index: 60; }
+.shot-text { font-size: 8vh; font-weight: 800; color: #fff; text-shadow: 0 0 4vh #000; animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { from { transform: scale(1); } to { transform: scale(1.06); } }
+.shot-overlay img { max-width: 86vw; max-height: 86vh; border: 1.2vh solid #fff; box-shadow: 0 2vh 6vh #000; transform: rotate(-2deg); }
+.shot-cam { position: absolute; right: 8vw; bottom: 8vh; font-size: 10vh; }
+.shot-overlay.flash { animation: flash .6s ease-out; }
+@keyframes flash { from { background: #fff; } to { background: #000a; } }
+
+/* голова: Rive-холст и карточка нового фото */
+.head-layer { position: absolute; inset: 0; pointer-events: none; }
+.head-rive { position: absolute; right: -2vw; bottom: -4vh; width: 38vh; height: 38vh; opacity: 0; transform: translateY(30%); transition: transform 1.2s cubic-bezier(.2,.8,.2,1), opacity .8s; }
+.head-rive.in { opacity: 1; transform: none; }
+.photo-card { position: absolute; left: 50%; bottom: 3vh; transform: translate(-50%, 140%); display: flex; align-items: center; gap: 2vw; background: #120a06e6; border: 1px solid #ffffff22; border-radius: 2vh; padding: 1.5vh 2.5vw 1.5vh 1.5vh; font-size: 3vh; transition: transform .8s cubic-bezier(.2,.8,.2,1); }
+.photo-card.in { transform: translate(-50%, 0); }
+.photo-card img { height: 18vh; border-radius: 1.2vh; }
+
+/* общие для сцен */
+.tv-scene { position: absolute; inset: 0; padding: 4vh 5vw; display: flex; flex-direction: column; align-items: center; gap: 3vh; background: radial-gradient(circle at 50% 30%, #3a2215, #120a06); overflow: hidden; }
+.tv-scene .qt-head { align-self: flex-start; }
+.qt-big.small { font-size: 7vh; margin-top: 2vh; }
+.qt-table.wide { flex: 0 1 70vw; width: 70vw; }
+.qt-av.big { width: 9vh; height: 9vh; }
+
+/* игра */
+.game-big { font-size: 14vh; font-weight: 800; color: var(--accent-2); line-height: 1; }
+.game-board { width: 60vw; flex: 0 1 auto; max-height: 60vh; overflow: hidden; }
+.qt-row.done b { color: var(--ok); }
+
+/* таймер */
+.timer-tv { justify-content: center; }
+.timer-label { font-size: 7vh; font-weight: 700; }
+.timer-digits { font-size: 30vh; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; color: var(--accent-2); }
+.timer-digits.done { color: var(--fail); animation: blink .6s steps(2) 6; }
+.timer-note { font-size: 6vh; color: var(--muted); min-height: 7vh; }
+@keyframes blink { 50% { opacity: .3; } }
+
+/* общий рейтинг */
+.rr-current { display: flex; flex-direction: column; gap: 2vh; width: 80vw; margin-top: 2vh; }
+.rr-list { display: flex; flex-direction: column; gap: 1vh; width: 70vw; opacity: .75; overflow: hidden; }
+.rr-card { display: flex; align-items: center; gap: 2vw; background: #0006; border-radius: 2vh; padding: 1.4vh 2vw; font-size: 3vh; }
+.rr-card.big { font-size: 4.6vh; background: #e8761a33; border: 2px solid var(--accent); animation: pop .7s cubic-bezier(.2,1.4,.4,1); }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } }
+.rr-place { font-size: 1.6em; font-weight: 800; width: 2.2em; color: var(--accent-2); }
+.rr-av { width: 2.2em; height: 2.2em; border-radius: 50%; object-fit: cover; }
+.rr-name { font-weight: 800; }
+.rr-break { font-size: .6em; color: var(--muted); }
+.rr-total { font-size: 1.4em; font-weight: 800; }
+.rr-card .grow { flex: 1; }
+
+/* финальное фото, слайд-шоу, скачивание */
+.final-tv { justify-content: center; }
+.final-img { max-width: 92vw; max-height: 90vh; box-shadow: 0 2vh 6vh #000; animation: pop .8s ease-out; }
+.slide-tv { padding: 0; background: #000; }
+.slide { position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s; }
+.slide.in { opacity: 1; }
+.slide-bg { position: absolute; inset: -5%; background-size: cover; background-position: center; filter: blur(40px) brightness(.55); }
+.slide-img { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
+.slide-cap { position: absolute; left: 0; right: 0; bottom: 3vh; text-align: center; font-size: 4vh; font-weight: 700; text-shadow: 0 0 2vh #000; }
+.download-tv { justify-content: center; }
+.download-tv .qr-big { background: #fff; padding: 2vh; border-radius: 2vh; width: 55vh; }
+.download-tv .qr-big img { width: 100%; display: block; }
+
+/* аллея и итоги резьбы */
+.alley-tv { padding: 0; background: #050302; }
+.alley-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.alley-head { position: absolute; top: 3vh; left: 0; right: 0; text-align: center; }
+.alley-head .qt-big { margin: 0; }
+.alley-labels { position: absolute; inset: 0; pointer-events: none; }
+.alley-num { position: absolute; transform: translate(-50%, 0); font-size: 4vh; font-weight: 800; color: #ffd27a; text-shadow: 0 0 2vh #000; }
+.alley-num.big { left: 50%; bottom: 6vh; font-size: 7vh; }
+.alley-slides { position: absolute; inset: 0; display: grid; place-items: center; }
+.alley-slides img { max-height: 80vh; max-width: 80vw; border-radius: 2vh; }
+.reveal-card { display: flex; align-items: center; gap: 4vw; margin-top: 6vh; animation: pop .8s ease-out; }
+.reveal-shot { height: 64vh; border-radius: 2vh; box-shadow: 0 2vh 6vh #000; }
+.reveal-info { display: flex; flex-direction: column; gap: 2vh; font-size: 4vh; }
+.reveal-author { display: flex; align-items: center; gap: 1.5vw; font-size: 6vh; font-weight: 800; }
+.reveal-place { font-size: 7vh; font-weight: 800; color: var(--accent-2); }
+.reveal-bonus { font-size: 6vh; font-weight: 800; color: var(--ok); }
+.hidden { display: none !important; }

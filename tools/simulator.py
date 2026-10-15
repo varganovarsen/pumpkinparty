@@ -10,7 +10,9 @@
   core     — вход, профили, переключение всех сцен, обрывы и возвраты, ручные правки очков,
              перезапуск сервера, сверка очков.
   evening  — весь вечер: core + квиз (4 раунда на тестовом контенте tests/fixtures/content,
-             сверка очков до единицы, перезапуск посреди вопроса). Игра и голосование — на своих этапах.
+             перезапуск посреди вопроса) + игра (тренировка и зачёт, обрыв посреди игры) + резьба
+             (тыквы, голосование, итоги) + таймер + общий рейтинг + финальное фото + скачивание.
+             Итоговые очки сверяются до единицы.
 """
 from __future__ import annotations
 
@@ -34,7 +36,6 @@ import websockets
 ROOT = Path(__file__).resolve().parent.parent
 SCENES = ["ambient", "quiz", "game", "timer", "carve_vote", "carve_reveal",
           "rating_reveal", "final_photo", "slideshow", "download"]
-NOT_YET = ["игра (этап 5)", "голосование за резьбу (этап 5)"]
 TEST_CONTENT = ROOT / "tests" / "fixtures" / "content"
 
 
@@ -121,6 +122,7 @@ class Client:
         self.next_id = 1
         self.connected = asyncio.Event()
         self.quiz: dict | None = None
+        self.state: dict = {}  # последние состояния модулей: game, vote, timer, finale
         self.reconnects = 0
         self.want = True
 
@@ -162,7 +164,10 @@ class Client:
             self.snapshot = m
             self.scene = m["scene"]["scene"]
             self.quiz = m.get("quiz")
+            self.state.update({k: m[k] for k in ("game", "vote", "timer", "finale") if k in m})
             self.connected.set()
+        elif t in ("game", "vote", "timer", "finale"):
+            self.state[t] = m[t]
         elif t == "quiz":
             self.quiz = m["quiz"]
         elif t == "head" and self.role == "tv" and m.get("head"):
@@ -468,7 +473,182 @@ async def scenario_quiz(base: str, roster: list, expected: dict[int, int], rep: 
     for c in everyone:
         await c.drop()
     await http.aclose()
-    print("\nИтог (ожидаемые = фактические очки):")
+    return host_player
+
+
+# ---------------------------------------------------------------------- игра, резьба, финал
+def tiny_png(size: int, spots: int) -> bytes:
+    from PIL import Image, ImageDraw
+    img = Image.new("L", (size, size), 0)
+    d = ImageDraw.Draw(img)
+    for i in range(spots):
+        d.ellipse((100 + 120 * i, 600, 160 + 120 * i, 660), fill=255)
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def competition_places(votes: dict[int, int], bonus: list[int]) -> dict[int, int]:
+    """Независимый от сервера расчёт бонусов: места 1,1,3…, без голосов — без места."""
+    out = {}
+    for pid, v in votes.items():
+        if v <= 0:
+            out[pid] = 0
+            continue
+        place = 1 + sum(1 for w in votes.values() if w > v)
+        out[pid] = bonus[place - 1] if place <= len(bonus) else 0
+    return out
+
+
+async def scenario_finale(base: str, roster: list, host_player: tuple, expected: dict[int, int], rep: Report) -> None:
+    sys.path.insert(0, str(ROOT))
+    from server.game import score_of  # тот же счёт, что у сервера
+
+    http = httpx.AsyncClient(base_url=base, timeout=20)
+    rnd = random.Random(11)
+    host = Client(base, "host")
+    tv = Client(base, "tv")
+    clients = []
+    for name, token, pid in [host_player, *roster]:
+        c = Client(base, "player", token, name)
+        c.pid = pid
+        clients.append(c)
+    everyone = [host, tv, *clients]
+    for c in everyone:
+        c.start()
+    await wait_for(lambda: all(c.connected.is_set() for c in everyone), 10)
+    points = {"regular": 10, "golden": 50, "rotten": -30}
+
+    def module(c, name):
+        return c.state.get(name)
+
+    print("Игра «Падающие тыквы»")
+    await host.cmd("set_scene", scene="game", force=True)
+    for mode in ("practice", "scored"):
+        r = await host.cmd("game_start", mode=mode)
+        if not r["ok"]:
+            rep.fail(f"игра ({mode}) не стартовала: {r.get('error')}")
+            return
+        await wait_for(lambda: all((module(c, "game") or {}).get("phase") == "running" for c in clients), 10)
+        dropped = clients[2]
+        await dropped.drop()  # обрыв посреди игры: результат уйдёт после возврата
+        for c in clients:
+            if c is dropped:
+                continue
+            g = module(c, "game")
+            items = g["items"]
+            caught = [it["i"] for it in items if rnd.random() < 0.7]
+            r = await c.cmd("game_result", caught=caught)
+            if mode == "scored" and r["ok"]:
+                expected[c.pid] += min(500, score_of(items, set(caught), points))
+        dropped.connected.clear()
+        dropped.start()
+        await wait_for(lambda: dropped.connected.is_set(), 10)
+        g = dropped.state["game"]
+        if g.get("items"):
+            caught = [it["i"] for it in g["items"] if it["kind"] == "golden"]
+            r = await dropped.cmd("game_result", caught=caught)
+            if mode == "scored" and r["ok"]:
+                expected[dropped.pid] += min(500, score_of(g["items"], set(caught), points))
+            rep.check(r["ok"], f"игра ({mode}): результат после обрыва принят", f"результат после обрыва не принят: {r}")
+        ok = await wait_for(lambda: (module(host, "game") or {}).get("phase") == "finished", 15)
+        rep.check(ok, f"игра ({mode}) закончилась", f"игра ({mode}) не закончилась")
+
+    print("Резьба: тыквы, голосование, итоги")
+    with_pumpkin = clients[1:6]  # пятеро сохранили тыквы
+    from PIL import Image
+    shot = io.BytesIO()
+    Image.new("RGB", (64, 64), (120, 40, 10)).save(shot, "JPEG")
+    for k, c in enumerate(with_pumpkin):
+        files = {"through.png": ("t.png", tiny_png(512, k + 1), "image/png"),
+                 "depth.png": ("d.png", tiny_png(512, 1), "image/png")}
+        for s in ("lit", "dark", "side"):
+            files[f"{s}.jpg"] = (f"{s}.jpg", shot.getvalue(), "image/jpeg")
+        r = (await http.post(f"/api/pumpkin/{c.pid}", files=files,
+                             data={"camera": json.dumps({"theta": 0, "phi": 1.3, "radius": 4.6})})).json()
+        if not r.get("ok"):
+            rep.fail(f"тыква {c.name} не сохранилась: {r}")
+    await host.cmd("set_scene", scene="carve_vote", force=True)
+    r = await host.cmd("vote_start")
+    rep.check(r["ok"], "голосование открыто", f"голосование не открылось: {r}")
+    await asyncio.sleep(0.3)
+    entries = (module(host, "vote") or {}).get("entries", [])
+    by_n = {}
+    votes_for = {c.pid: 0 for c in with_pumpkin}
+    for c in clients:
+        own = (module(c, "vote") or {}).get("my", {}).get("own")
+        choices = [e["n"] for e in entries if e["n"] != own]
+        if rnd.random() < 0.15 or not choices:
+            await c.cmd("vote", n=None)
+            continue
+        n = rnd.choice(choices[:3])  # голоса концентрируются — будут ничьи и места
+        rr = await c.cmd("vote", n=n)
+        if not rr["ok"]:
+            rep.fail(f"голос {c.name} не принят: {rr.get('error')}")
+        by_n.setdefault(c.pid, n)
+    r = await c.cmd("vote", n=own) if own else {"code": "own"}
+    rep.check(r.get("code") == "own", "голос за свою тыкву отклонён", "голос за свою тыкву принят")
+    await host.cmd("vote_close")
+    await asyncio.sleep(0.3)
+    results = (module(host, "vote") or {}).get("results", [])
+    for res in results:
+        votes_for[res["player_id"]] = res["votes"]
+    bonuses = competition_places(votes_for, [500, 300, 100])
+    server_bonus = {res["player_id"]: res["bonus"] for res in results}
+    rep.check(bonuses == server_bonus, "места и бонусы резьбы совпали с независимым расчётом",
+              f"бонусы резьбы расходятся: ожидалось {bonuses}, сервер {server_bonus}")
+    for pid, b in bonuses.items():
+        expected[pid] += b
+    await host.cmd("set_scene", scene="carve_reveal", force=True)
+    for _ in range(len(results) + 1):
+        await host.cmd("vote_reveal")
+    rep.check((await http.get("/api/pumpkins")).json()["revealed"], "итоги резьбы раскрыты, тыквы в скачивании",
+              "тыквы не появились в скачивании")
+
+    print("Перерыв, общий рейтинг, финал")
+    await host.cmd("set_scene", scene="timer", force=True)
+    await host.cmd("timer_set", minutes=0.2, label="Скоро финал")
+    ok = await wait_for(lambda: (module(host, "timer") or {}).get("finished"), 10)
+    rep.check(ok and host.scene == "timer", "таймер дошёл до нуля, сцена не переключилась", "таймер не закончился")
+    await host.cmd("set_scene", scene="rating_reveal", force=True)
+    await asyncio.sleep(0.3)
+    groups = (module(host, "finale") or {}).get("groups", [])
+    in_scoring = {pid: exp for pid, exp in expected.items() if pid != host_player[2]}
+    totals = sorted({exp for exp in in_scoring.values()})
+    rep.check([g[0]["total"] for g in groups] == totals and all(r["player_id"] != host_player[2] for g in groups for r in g),
+              "общий рейтинг: суммы и порядок верны, ведущего нет", f"рейтинг расходится: {[g[0]['total'] for g in groups]} vs {totals}")
+    for _ in groups:
+        await host.cmd("rating_next")
+    await asyncio.sleep(0.3)
+    rep.check(host.snapshot["settings"]["hide_total"] is False, "после раскрытия суммы снова видны на телефонах",
+              "общий рейтинг так и остался скрытым")
+    await host.cmd("set_scene", scene="final_photo", force=True)
+    img = io.BytesIO()
+    Image.new("RGB", (1600, 1200), (60, 80, 120)).save(img, "JPEG")
+    r = (await http.post("/api/final_photo", files={"file": ("f.jpg", img.getvalue(), "image/jpeg")})).json()
+    rep.check(r.get("ok"), "финальное фото обработано", f"финальное фото: {r}")
+    await host.cmd("set_scene", scene="slideshow")
+    await host.cmd("set_scene", scene="download")
+    photos = (await http.get("/api/photos?final_first=1")).json()["photos"]
+    z = await http.post("/api/download_zip", data={"ids": ",".join(str(p["id"]) for p in photos)})
+    rep.check(z.status_code == 200 and photos and photos[0]["kind"] == "final",
+              f"скачивание: финальное фото первым, ZIP из {len(photos)} фото", "скачивание не работает")
+
+    def scores_ok() -> bool:
+        got = {p["id"]: p["score"] for p in host.snapshot["players"]}
+        return all(got.get(pid) == exp for pid, exp in expected.items())
+
+    if await wait_for(scores_ok, 5):
+        rep.step(f"итоговые очки вечера совпали у всех {len(expected)} игроков")
+    else:
+        got = {p["id"]: p["score"] for p in host.snapshot["players"]}
+        for pid, exp in expected.items():
+            if got.get(pid) != exp:
+                rep.fail(f"игрок {pid}: ожидалось {exp}, на сервере {got.get(pid)}")
+    for c in everyone:
+        await c.drop()
+    await http.aclose()
+    print("\nИтог вечера (ожидаемые = фактические очки):")
     names = {pid: name for name, _, pid in [host_player, *roster]}
     for pid, exp in sorted(expected.items(), key=lambda x: -x[1]):
         print(f"  {names[pid]}: {exp}")
@@ -489,8 +669,9 @@ async def main_async(args) -> int:
             if server is None:
                 print("\nКвиз пропущен: нужен свой сервер с тестовым контентом (запуск без --url)")
             else:
-                await scenario_quiz(base, roster, expected, rep, server)
-            print("\nЕщё не реализовано в приложении, пропущено: " + ", ".join(NOT_YET))
+                host_player = await scenario_quiz(base, roster, expected, rep, server)
+                if host_player:
+                    await scenario_finale(base, roster, host_player, expected, rep)
     finally:
         if server:
             await server.stop()

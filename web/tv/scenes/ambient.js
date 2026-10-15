@@ -1,9 +1,9 @@
-// Ambient: фон-видео (или лёгкий режим), QR в углу, голова-тыква.
-// Голова пока CSS-заглушка; Rive (assets/rive/head.riv, HeadSM) подключается в модуле 04.
+// Ambient: фон-видео (или лёгкий режим), QR в углу, голова-тыква с фактами, карточка нового селфи.
+// Голова: Rive (assets/rive/head.riv, state machine HeadSM) или CSS-заглушка, пока .riv — заглушка.
 import { el, clear } from '/web/shared/util.js';
+import { createHead } from '/web/tv/head.js';
 
 const LEAVES = ['🍁', '🍂', '🍃'];
-const TAIL_SECONDS = 3;
 
 export function mount(root, ctx) {
   const box = el('div', { class: 'ambient' });
@@ -11,8 +11,9 @@ export function mount(root, ctx) {
   const qr = el('div', { class: 'qr-corner' },
     el('img', { src: '/api/qr.svg?path=/', alt: '' }),
     el('div', { class: 'url' }, ctx.joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')));
-  const headBox = el('div');
-  box.append(bg, qr, headBox);
+  const headBox = el('div', { class: 'head-layer' });
+  const cardBox = el('div');
+  box.append(bg, qr, cardBox, headBox);
   root.append(box);
 
   let light = null;
@@ -41,55 +42,33 @@ export function mount(root, ctx) {
   }
 
   // ---------------------------------------------------------------- голова
-  let head = null; // {factId, node, timer, audio}
+  const head = createHead(headBox, ctx);
 
-  function hideHead() {
-    if (!head) return;
-    const h = head;
-    head = null;
-    clearTimeout(h.timer);
-    h.audio?.pause();
-    h.node.classList.remove('in', 'talking');
-    setTimeout(() => h.node.remove(), 1300);
-    ctx.link.cmd('head_done', { fact_id: h.factId });
-  }
-
-  function showHead(data, resumed = false) {
-    hideHead();
-    const elapsed = ctx.link.serverNow() / 1000 - data.called_at;
-    if (resumed && elapsed > data.seconds) return;
-    const node = el('div', { class: 'head' },
-      el('div', { class: 'bubble' }, data.text),
-      el('div', { class: 'face' }, el('div', { class: 'eye l' }), el('div', { class: 'eye r' }), el('div', { class: 'mouth' })));
-    headBox.append(node);
-    head = { factId: data.fact_id, node, timer: null, audio: null };
-    const h = head;
-    requestAnimationFrame(() => requestAnimationFrame(() => node.classList.add('in')));
-    ctx.link.cmd('head_shown', { fact_id: data.fact_id });
-    const hideIn = (s) => { clearTimeout(h.timer); h.timer = setTimeout(() => { if (head === h) hideHead(); }, s * 1000); };
-
-    if (!resumed) ctx.sfx('fact-notify');
-    if (!resumed && data.mode === 'loud' && data.audio_url) {
-      const a = new Audio(data.audio_url);
-      h.audio = a;
-      a.addEventListener('playing', () => node.classList.add('talking'));
-      a.addEventListener('ended', () => { node.classList.remove('talking'); hideIn(TAIL_SECONDS); });
-      a.addEventListener('error', () => hideIn(data.seconds));
-      hideIn(60); // страховка, если аудио не стартует
-      setTimeout(() => a.play().catch(() => hideIn(data.seconds)), 900);
-    } else {
-      hideIn(resumed ? data.seconds - elapsed : data.seconds);
-    }
+  // ---------------------------------------------------------------- карточка нового селфи
+  let cardTimer = null;
+  function showCard(photo) {
+    if (!ctx.settings.new_photo_card || photo.kind !== 'selfie' || head.visible()) return;
+    clearTimeout(cardTimer);
+    clear(cardBox).append(el('div', { class: 'photo-card' },
+      el('img', { src: photo.thumb_url, alt: '' }),
+      el('div', {}, el('div', { class: 'muted' }, 'Новое фото'), el('b', {}, `от ${photo.author_name || 'гостя'}`))));
+    requestAnimationFrame(() => cardBox.firstChild?.classList.add('in'));
+    cardTimer = setTimeout(() => {
+      cardBox.firstChild?.classList.remove('in');
+      setTimeout(() => clear(cardBox), 800);
+    }, (ctx.settings.new_photo_card_seconds || 7) * 1000);
   }
 
   renderBg();
-  if (ctx.head) showHead(ctx.head, true);
+  if (ctx.head) head.show(ctx.head, true);
 
   return {
     update() { renderBg(); },
     onMessage(m) {
-      if (m.t === 'head') { if (m.head) showHead(m.head); else hideHead(); }
+      if (m.t === 'head') { if (m.head) head.show(m.head); else head.hide(); }
+      if (m.t === 'head_speak') head.speak();
+      if (m.t === 'photo_added') showCard(m.photo);
     },
-    unmount() { if (head) { clearTimeout(head.timer); head.audio?.pause(); } },
+    unmount() { head.destroy(); clearTimeout(cardTimer); },
   };
 }

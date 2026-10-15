@@ -30,9 +30,9 @@ def open_upload(data: bytes) -> Image.Image:
     return img
 
 
-def make_preview(img: Image.Image) -> bytes:
+def make_preview(img: Image.Image, max_side: int = PREVIEW_MAX) -> bytes:
     img = img.copy()
-    img.thumbnail((PREVIEW_MAX, PREVIEW_MAX))
+    img.thumbnail((max_side, max_side))
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=88)
     return buf.getvalue()

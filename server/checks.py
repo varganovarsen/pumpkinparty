@@ -17,7 +17,7 @@ OK, WARN, FAIL, INFO = "ok", "warn", "fail", "info"
 
 DEPS = [
     ("fastapi", True), ("multipart", True), ("uvicorn", True), ("yaml", True), ("PIL", True), ("pillow_heif", True),
-    ("qrcode", True), ("cv2", True), ("numpy", True), ("scipy", False),
+    ("qrcode", True), ("cv2", True), ("numpy", True), ("scipy", False), ("soundfile", False),
 ]
 
 

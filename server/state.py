@@ -107,9 +107,23 @@ class Evening:
         self.assets_dir = cfg.root / "assets"
         self.data_dir = cfg.data_dir
         self._load()
-        from .quiz import Quiz  # здесь, чтобы не было циклического импорта
+        # модули сцен импортируются здесь, чтобы не было циклического импорта
+        from .finale import Finale, Timer
+        from .game import Game
+        from .photos import Photos
+        from .quiz import Quiz
+        from .vote import Vote
 
         self.quiz = Quiz(self)
+        self.photos = Photos(self)
+        self.game = Game(self)
+        self.vote = Vote(self)
+        self.timer = Timer(self)
+        self.finale = Finale(self)
+        # модули с собственным состоянием для клиентов: имя события = имя модуля
+        self.modules = {"quiz": self.quiz, "game": self.game, "vote": self.vote,
+                        "timer": self.timer, "finale": self.finale}
+        self._head_schedule(initial=True)
 
     # ------------------------------------------------------------------ загрузка
     def _defaults(self) -> dict:
@@ -127,6 +141,9 @@ class Evening:
             "head_interval_minutes": c["head"]["interval_minutes"],
             "light_mode": bool(c["ambient"]["light_mode"]),
             "new_photo_card": bool(c["ambient"]["new_photo_card"]),
+            "shots_enabled": True,
+            "carve_locked": False,
+            "head_next_at": None,
         }
 
     def _load(self) -> None:
@@ -336,9 +353,14 @@ class Evening:
         self._set("scene_payload", payload or {})
         self._set("scene_started_at", now)
         self.log(f"Сцена: {SCENE_TITLES[scene]}")
+        if scene == "rating_reveal" and self.finale.st["step"] < 0:
+            self.finale.build_and_save()  # места считаются заново при каждом входе до первого раскрытия
         self.emit({"tv", "host", "player", "carve"}, {"t": "scene", **self.scene_info()})
-        if scene == "quiz":
-            self.emit_quiz()  # содержит и next_step для /host
+        module = {"quiz": "quiz", "game": "game", "carve_vote": "vote", "carve_reveal": "vote",
+                  "timer": "timer", "rating_reveal": "finale", "slideshow": "finale",
+                  "final_photo": "finale"}.get(scene)
+        if module:
+            self.emit_module(module)  # содержит и next_step для /host
         else:
             self.emit("host", {"t": "next_step", "next_step": self.next_step()})
 
@@ -354,13 +376,19 @@ class Evening:
     def scene_is_live(self, scene: str) -> bool:
         if scene == "quiz":
             return self.quiz.is_live()
-        return scene in LIVE
+        if scene == "game":
+            return self.game.is_live()
+        if scene == "carve_vote":
+            return self.vote.is_live()
+        return False
 
     def next_step(self) -> dict | None:
         """Контекстная кнопка «Следующий шаг» на /host: {label, cmd, args?, disabled?, hint?}."""
         cur = self.settings["scene"]
-        if cur == "quiz":
-            action = self.quiz.next_action()
+        owner = {"quiz": self.quiz, "game": self.game, "carve_vote": self.vote, "carve_reveal": self.vote,
+                 "rating_reveal": self.finale}.get(cur)
+        if owner:
+            action = owner.next_action()
             if action:
                 return action
         if cur == "ambient" and not self.quiz.st["done"]:
@@ -378,21 +406,35 @@ class Evening:
     def emit_facts(self) -> None:
         self.emit("player", {"t": "facts", "facts": self.facts_public(), "locked": self.quiz.facts_locked()})
 
-    def emit_quiz(self, roles: set[str] | None = None) -> None:
+    def emit_module(self, name: str, roles: set[str] | None = None, player_id: int | None = None) -> None:
+        """Разослать состояние модуля сцены: tv и host — общий вид, каждому игроку — свой."""
+        mod = self.modules[name]
         roles = roles or {"tv", "host", "player"}
         for role in ("tv", "host"):
             if role in roles:
-                self.emit(role, {"t": "quiz", "quiz": self.quiz.public(role)})
+                self.emit(role, {"t": name, name: mod.public(role)})
         if "player" in roles:
-            for pid in self.players:
-                self.emit("player", {"t": "quiz", "quiz": self.quiz.public("player", pid)}, player_id=pid)
+            for pid in ([player_id] if player_id else list(self.players)):
+                self.emit("player", {"t": name, name: mod.public("player", pid)}, player_id=pid)
         if "host" in roles:
             self.emit("host", {"t": "next_step", "next_step": self.next_step()})
+
+    def emit_quiz(self, roles: set[str] | None = None) -> None:
+        self.emit_module("quiz", roles)
+
+    def modules_snapshot(self, role: str, player_id: int | None = None) -> dict:
+        return {name: mod.public(role, player_id) for name, mod in self.modules.items()}
+
+    def tick(self) -> None:
+        """Таймеры всех модулей (вызывается из app.tick_loop по серверному времени)."""
+        for mod in (self.quiz, self.game, self.timer, self.photos):
+            mod.tick()
+        self.head_tick()
 
     # ------------------------------------------------------------------ настройки ведущего
     HOST_SETTINGS = {
         "host_in_scoring": bool, "hide_total": bool, "head_mode": str, "head_enabled": bool,
-        "head_interval_minutes": float, "light_mode": bool, "new_photo_card": bool,
+        "head_interval_minutes": float, "light_mode": bool, "new_photo_card": bool, "shots_enabled": bool,
     }
 
     def set_setting(self, key: str, value: Any) -> None:
@@ -412,6 +454,8 @@ class Evening:
                     self.db.execute("UPDATE players SET in_scoring=? WHERE id=?", (int(value), p.id))
             self.players_changed()
         self._set(key, value)
+        if key == "head_interval_minutes":
+            self._head_schedule()
         self.log(f"Настройка {key} = {value}")
         self.emit_settings()
         if key == "hide_total":
@@ -436,7 +480,40 @@ class Evening:
         sign = "+" if amount > 0 else ""
         self.log(f"Ручная правка: {p.name} {sign}{amount}" + (f" ({note})" if note else ""), p.id)
 
-    # ------------------------------------------------------------------ голова (заглушка этапа 1)
+    # ------------------------------------------------------------------ голова-тыква (модуль 04)
+    def _head_schedule(self, initial: bool = False) -> None:
+        """Следующее появление головы: через интервал ± разброс (минуты)."""
+        if initial and self.settings.get("head_next_at"):
+            return
+        h = self.cfg["head"]
+        minutes = float(self.settings["head_interval_minutes"]) + random.uniform(
+            -float(h["interval_jitter_minutes"]), float(h["interval_jitter_minutes"]))
+        self._set("head_next_at", self.clock.now() + max(0.5, minutes) * 60)
+
+    def head_tick(self) -> None:
+        if not self.settings["head_enabled"] or self.settings["scene"] != "ambient":
+            return
+        if self.head_snapshot() or self.photos.shot_running:
+            return
+        now = self.clock.now()
+        gap = float(self.cfg["head"]["min_gap_after_scene_minutes"]) * 60
+        if now < self.settings["head_next_at"] or now < (self.settings["last_scene_end_at"] or 0) + gap:
+            return
+        try:
+            self.head_call()
+        except CmdError as e:
+            self.log(f"Голова: {e}")
+            self._head_schedule()
+
+    def head_speak(self) -> None:
+        """«Озвучить»: проиграть озвучку текущего факта с начала и продлить показ."""
+        h = self.head_snapshot()
+        if not h:
+            raise CmdError("Сейчас на экране нет факта", "no_head")
+        if not h.get("audio_url"):
+            raise CmdError("У этого факта нет озвучки", "no_audio")
+        self.emit("tv", {"t": "head_speak"})
+
     def head_call(self) -> dict:
         if self.settings["scene"] != "ambient":
             raise CmdError("Голова работает только в ambient", "wrong_scene")
@@ -451,22 +528,26 @@ class Evening:
             pool = [f for f in pool if f["id"] != self.head_current["fact_id"]] or pool
         fact = random.choice(pool)
         audio = fact.get("audio")
-        has_audio = bool(audio) and (self.content.dir / "audio" / audio).exists()
+        audio_path = self.content.dir / "audio" / str(audio) if audio else None
+        has_audio = bool(audio_path) and audio_path.exists()
+        lipsync = audio_path.with_suffix(".lipsync.json") if has_audio else None
         self.head_current = {
             "fact_id": fact["id"],
             "text": fact["text"],
             "audio_url": f"/content/audio/{audio}" if has_audio else None,
+            "lipsync_url": f"/content/audio/{lipsync.name}" if lipsync and lipsync.exists() else None,
             "mode": self.settings["head_mode"],
             "seconds": HEAD_QUIET_SECONDS,
             "called_at": self.clock.now(),
         }
         self.log(f"Голова: факт {fact['id']}")
-        self.emit("tv", {"t": "head", "head": self.head_current})
+        self.emit({"tv", "host"}, {"t": "head", "head": self.head_current})
+        self._head_schedule()
         return self.head_current
 
     def head_skip(self) -> None:
         self.head_current = None
-        self.emit("tv", {"t": "head", "head": None})
+        self.emit({"tv", "host"}, {"t": "head", "head": None})
 
     def head_shown(self, fact_id: str) -> None:
         """Пузырь появился на /tv: факт считается показанным."""
@@ -484,6 +565,7 @@ class Evening:
     def head_done(self, fact_id: str) -> None:
         if self.head_current and self.head_current["fact_id"] == fact_id:
             self.head_current = None
+            self.emit("host", {"t": "head", "head": None})
 
     def facts_public(self) -> list[dict]:
         # во время раунда 4 тексты не отдаются вовсе (вкладка «Факты» закрыта)
@@ -508,7 +590,9 @@ class Evening:
             shutil.rmtree(self.data_dir / sub, ignore_errors=True)
         self.head_current = None
         self._load()
-        self.quiz.reload()
+        for mod in (self.quiz, self.photos, self.game, self.vote, self.timer, self.finale):
+            mod.reload()
+        self._head_schedule()
         self.log(f"Вечер сброшен, копия: {dest.name}")
         if self.hub:
             self.hub.reset_all()

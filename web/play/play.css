@@ -59,3 +59,45 @@ input[type=range] { accent-color: var(--accent); }
 .qres.ok .big { color: var(--ok); }
 .qres.bad .big { color: var(--fail); }
 .quiz textarea { font: inherit; font-size: 18px; width: 100%; padding: .7em; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+
+/* общее */
+.big-btn { width: 100%; margin-top: 8px; min-height: 56px; display: block; text-align: center; text-decoration: none; }
+a.btn { display: inline-block; text-decoration: none; color: var(--text); }
+.big-link { display: block; text-align: center; color: #1b0e04; }
+
+/* игра */
+.game { position: relative; }
+.game-hud { text-align: center; font-weight: 800; padding: 6px 0; }
+.game-canvas { width: 100%; height: calc(100dvh - 140px); display: block; touch-action: none; background: linear-gradient(#1d120c, #2f1c10); border-radius: 14px; }
+.game-count { position: absolute; left: 0; right: 0; top: 30%; text-align: center; font-size: 4rem; font-weight: 800; color: var(--accent-2); pointer-events: none; text-shadow: 0 0 20px #000; }
+
+/* голосование */
+.vote { padding: 10px 0 30px; }
+.vote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vote-cell { position: relative; padding: 0; overflow: hidden; border: 3px solid transparent; aspect-ratio: 1; min-height: 0; }
+.vote-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vote-cell.sel { border-color: var(--accent); }
+.vote-cell.own { opacity: .45; }
+.vote-n { position: absolute; left: 6px; bottom: 6px; background: #000b; padding: 2px 8px; border-radius: 8px; font-weight: 800; }
+
+/* селфи-редактор */
+.photo-tab { padding-top: 10px; }
+.ed-stage { display: flex; justify-content: center; margin: 4px 0 8px; touch-action: none; }
+.ed-stage canvas { border-radius: 10px; }
+.ed-row { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0; }
+.ed-row button { flex: none; }
+.ed-row button.on { background: var(--accent); color: #1b0e04; }
+.ed-row.stickers .sticker-btn { width: 64px; height: 64px; padding: 4px; min-height: 0; }
+.sticker-btn img { width: 100%; height: 100%; object-fit: contain; }
+.ed-tools { margin-top: 8px; }
+.ed-tools .row button { flex: 1; }
+.result-img { width: 100%; border-radius: 10px; margin: 8px 0; -webkit-touch-callout: default; }
+
+/* альбом */
+.album { padding-top: 10px; }
+.album-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.album-cell { padding: 0; min-height: 0; aspect-ratio: 1; overflow: hidden; border-radius: 6px; border: 0; }
+.album-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.viewer { position: fixed; inset: 0; z-index: 50; background: #000e; display: flex; flex-direction: column; justify-content: center; padding: 12px; gap: 10px; }
+.viewer img { max-width: 100%; max-height: 75dvh; object-fit: contain; margin: 0 auto; -webkit-touch-callout: default; }
+.viewer-bar { color: #fff; }

@@ -21,7 +21,7 @@
 - Тесты: `pip install -r requirements-dev.txt && python -m pytest`.
 - Симулятор: `python tools/simulator.py --players 8 --speed 30 --scenario evening` (квиз — на тестовом контенте).
 - Попробовать квиз без настоящего контента: `set PUMPKIN_CONTENT=tests\fixtures\content` (Windows) перед запуском сервера.
-- Контент: `python tools/check_content.py`.
+- Контент: `python tools/check_content.py`. Липсинк: `python tools/make_lipsync.py`, предпросмотр — `/tools/lipsync-preview`.
 - Заглушки ассетов: `python tools/make_stubs.py` (нужен ffmpeg).
 - Модель тыквы из glTF: `python tools/pack_model.py <папка со scene.gltf>` → `assets/carve/pumpkin.glb`.
 - Сторонние материалы и лицензии: [`docs/CREDITS.md`](docs/CREDITS.md).
@@ -32,4 +32,5 @@
 - Этап 1 (ядро, модули 01 и 08) готов.
 - Этап 2: прототип резьбы на `/carve` проверен на iPad — решение «идём» (`docs/DECISIONS.md`). Аллея и голосование — день 11.
 - Этап 3: квиз (4 раунда, бонусы за скорость, раунд 4 с ручной проверкой, скрытый рейтинг) готов. Симулятор прогоняет его целиком.
-- Дальше: фото (модуль 03).
+- Этапы 4-6: фото (селфи, альбом, кадры вебки, финальное фото, скачивание), голова-тыква (таймер, Rive, липсинк), игра, аллея и голосование, таймер, слайд-шоу, общий рейтинг — готовы. Симулятор прогоняет весь вечер.
+- Дальше: контент (факты, вопросы, фото сортов), настоящие ассеты, репетиция на ноутбуке.

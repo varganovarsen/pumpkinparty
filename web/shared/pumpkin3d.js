@@ -172,51 +172,70 @@ function patchMasked(material, uniforms, { decor = false, innerGlow = false, cut
   return material;
 }
 
+// ---------------------------------------------------------------- одна тыква (меши + свеча)
+
+export function pumpkinUniforms() {
+  return {
+    carveMask: { value: null },
+    carveFlesh: { value: FLESH.clone() },
+    carveGlow: { value: new THREE.Color(0, 0, 0) },
+    carveInnerGlow: { value: new THREE.Color(0, 0, 0) },
+    carveCandle: { value: new THREE.Vector3() },
+  };
+}
+
+// Группа одной тыквы со своими uniforms (маска, свечение). Внутренняя оболочка общая для модели.
+export function buildPumpkin(model, uniforms) {
+  model._inner = model._inner || innerShell(model.body);
+  model._stemCut = model._stemCut ?? stemCutY(model.body);
+  const group = new THREE.Group();
+  const outerMat = model.bodyMaterial.clone();
+  outerMat.side = THREE.FrontSide;
+  const outer = new THREE.Mesh(model.body, patchMasked(outerMat, uniforms, { decor: true }));
+  const innerMat = new THREE.MeshStandardMaterial({ color: FLESH, roughness: 0.85, side: THREE.DoubleSide });
+  const inner = new THREE.Mesh(model._inner, patchMasked(innerMat, uniforms, { innerGlow: true }));
+  group.add(outer, inner);
+  let stem = null;
+  if (model.stem) {
+    stem = new THREE.Mesh(model.stem, patchMasked(model.stemMaterial.clone(), uniforms, { cutBelowY: model._stemCut }));
+    group.add(stem);
+  }
+  // свеча внутри; точечного света нет: без теней он светил бы сквозь стенку, свеча = свечение в шейдере
+  model.body.computeBoundingBox();
+  const floor = model.body.boundingBox.min.y + WALL + 0.05;
+  const waxMat = new THREE.MeshStandardMaterial({ color: 0xf3e6cf, roughness: 0.6 });
+  const wax = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.22, 20), waxMat);
+  wax.position.y = floor + 0.11;
+  const flame = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffd27a }));
+  flame.scale.set(1, 1.9, 1);
+  flame.position.y = floor + 0.3;
+  group.add(wax, flame);
+  uniforms.carveCandle.value.set(0, floor + 0.3, 0);
+  return { group, outer, inner, stem, flame, waxMat, uniforms, stemCut: model._stemCut };
+}
+
+// level 0 — свеча не горит, 1 — горит (с мерцанием чуть меньше/больше).
+export function applyCandle(p, level) {
+  p.uniforms.carveGlow.value.copy(WARM).multiplyScalar(0.9 * level);
+  p.uniforms.carveInnerGlow.value.copy(WARM).multiplyScalar(1.5 * level);
+  p.waxMat.emissive.copy(WARM).multiplyScalar(0.45 * level);
+  p.flame.visible = level > 0;
+}
+
+export function flickerAt(t, phase = 0) {
+  return 0.86 + 0.07 * Math.sin(t * 7.3 + phase) + 0.05 * Math.sin(t * 13.1 + 1.7 + phase) + 0.03 * Math.sin(t * 23.9 + phase);
+}
+
 // ---------------------------------------------------------------- сцена тыквы
 
 export class PumpkinStage {
   constructor(model) {
     this.model = model;
     this.scene = new THREE.Scene();
-    this.uniforms = {
-      carveMask: { value: null },
-      carveFlesh: { value: FLESH.clone() },
-      carveGlow: { value: new THREE.Color(0, 0, 0) },
-      carveInnerGlow: { value: new THREE.Color(0, 0, 0) },
-      carveCandle: { value: new THREE.Vector3() },
-    };
-    this.group = new THREE.Group();
+    this.uniforms = pumpkinUniforms();
+    const parts = buildPumpkin(model, this.uniforms);
+    Object.assign(this, parts);
     this.scene.add(this.group);
-
-    const outerMat = model.bodyMaterial.clone();
-    outerMat.side = THREE.FrontSide;
-    this.outer = new THREE.Mesh(model.body, patchMasked(outerMat, this.uniforms, { decor: true }));
-    this.innerGeometry = innerShell(model.body);
-    const innerMat = new THREE.MeshStandardMaterial({ color: FLESH, roughness: 0.85, side: THREE.DoubleSide });
-    this.inner = new THREE.Mesh(this.innerGeometry, patchMasked(innerMat, this.uniforms, { innerGlow: true }));
-    this.group.add(this.outer, this.inner);
-    this.stemCut = stemCutY(model.body);
-    if (model.stem) {
-      const stemMat = model.stemMaterial.clone();
-      this.stem = new THREE.Mesh(model.stem, patchMasked(stemMat, this.uniforms, { cutBelowY: this.stemCut }));
-      this.group.add(this.stem);
-    }
-
-    // свеча внутри
-    model.body.computeBoundingBox();
-    const floor = model.body.boundingBox.min.y + WALL + 0.05;
-    const candle = new THREE.Group();
-    this.waxMat = new THREE.MeshStandardMaterial({ color: 0xf3e6cf, roughness: 0.6 });
-    const wax = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.22, 20), this.waxMat);
-    wax.position.y = floor + 0.11;
-    this.flame = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffd27a }));
-    this.flame.scale.set(1, 1.9, 1);
-    this.flame.position.y = floor + 0.3;
-    candle.add(wax, this.flame);
-    this.group.add(candle);
-    // Точечного света нет: без теней он светил бы сквозь стенку. Свеча = свечение изнутри (шейдер).
-    this.uniforms.carveCandle.value.set(0, floor + 0.3, 0);
-
     // свет комнаты
     this.hemi = new THREE.HemisphereLight(0xfff1e0, 0x2a1d14, 1.4);
     this.sun = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -240,16 +259,13 @@ export class PumpkinStage {
   }
 
   applyCandle() {
-    const level = this.dark ? this.flicker : 0;
-    this.uniforms.carveGlow.value.copy(WARM).multiplyScalar(0.9 * level);
-    this.uniforms.carveInnerGlow.value.copy(WARM).multiplyScalar(1.5 * level);
-    this.waxMat.emissive.copy(WARM).multiplyScalar(0.45 * level);
+    applyCandle(this, this.dark ? this.flicker : 0);
   }
 
   // Мерцание свечи; t в секундах. Возвращает true, если нужно перерисовать.
   tick(t) {
     if (!this.dark) return false;
-    this.flicker = 0.86 + 0.07 * Math.sin(t * 7.3) + 0.05 * Math.sin(t * 13.1 + 1.7) + 0.03 * Math.sin(t * 23.9);
+    this.flicker = flickerAt(t);
     this.flame.scale.set(1, 1.8 + 0.25 * Math.sin(t * 11), 1);
     this.applyCandle();
     return true;
@@ -605,6 +621,75 @@ export class Carver {
   dispose() {
     for (const t of [this.base, this.mask, this.display, this.coverage, this.depthRT]) t?.dispose();
     this.shapeTex.dispose();
+  }
+}
+
+// ---------------------------------------------------------------- маски для просмотра (аллея)
+
+// Загружает сохранённые маски тыкв в текстуры для показа (с добивкой за края островов развёртки).
+// Без отмены и резки — легче Carver: одна текстура на тыкву, покрытие развёртки общее.
+export class MaskBank {
+  constructor(renderer, model, size = 1024) {
+    this.renderer = renderer;
+    this.size = size;
+    this.coverage = maskTarget(size);
+    const covMat = new THREE.ShaderMaterial({
+      vertexShader: 'void main(){ gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0); }',
+      fragmentShader: 'void main(){ gl_FragColor = vec4(1.0); }',
+      side: THREE.DoubleSide, depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+    });
+    const covScene = new THREE.Scene();
+    const covMesh = new THREE.Mesh(model.body, covMat);
+    covMesh.frustumCulled = false;
+    covScene.add(covMesh);
+    this.raw = maskTarget(size);
+    this.compose = new Quad(`
+      uniform sampler2D through; uniform sampler2D depth;
+      varying vec2 vUv;
+      void main(){ gl_FragColor = vec4(step(0.5, texture2D(through, vUv).r), texture2D(depth, vUv).r, 0.0, 0.0); }`,
+    { through: { value: null }, depth: { value: null } });
+    this.dilate = new Quad(`
+      uniform sampler2D mask; uniform sampler2D cov; uniform vec2 texel;
+      varying vec2 vUv;
+      void main(){
+        vec4 c = texture2D(mask, vUv);
+        if (texture2D(cov, vUv).r < 0.5) {
+          c = vec4(0.0);
+          for (int dx = -${DILATE}; dx <= ${DILATE}; dx++)
+            for (int dy = -${DILATE}; dy <= ${DILATE}; dy++) {
+              vec2 q = vUv + vec2(float(dx), float(dy)) * texel;
+              if (texture2D(cov, q).r > 0.5) c = max(c, texture2D(mask, q));
+            }
+        }
+        gl_FragColor = c;
+      }`, { mask: { value: this.raw.texture }, cov: { value: this.coverage.texture }, texel: { value: new THREE.Vector2(1 / size, 1 / size) } });
+    const r = renderer;
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this.coverage);
+    r.setClearColor(0x000000, 0);
+    r.clear();
+    r.render(covScene, new THREE.Camera());
+    r.setRenderTarget(prev);
+  }
+
+  // Вернуть новую текстуру маски для показа (PNG через, глубина).
+  async load(throughUrl, depthUrl) {
+    const load = (url) => new Promise((res, rej) => new THREE.TextureLoader().load(url, (t) => {
+      t.flipY = false; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+      res(t);
+    }, undefined, rej));
+    const [t, d] = await Promise.all([load(throughUrl), load(depthUrl)]);
+    const out = maskTarget(this.size);
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    this.compose.material.uniforms.through.value = t;
+    this.compose.material.uniforms.depth.value = d;
+    this.compose.render(r, this.raw);
+    this.dilate.render(r, out);
+    r.setRenderTarget(prev);
+    t.dispose();
+    d.dispose();
+    return out;
   }
 }
 

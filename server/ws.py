@@ -83,10 +83,11 @@ class Hub:
             snap["facts"] = ev.facts_public()
             snap["facts_locked"] = ev.quiz.facts_locked()
             snap["avatars_taken"] = ev.taken_avatars()
-            snap["quiz"] = ev.quiz.public("player", c.player_id)
+            snap.update(ev.modules_snapshot("player", c.player_id))
         if c.role in ("tv", "host"):
             snap["players"] = ev.players_public(with_scores=True)
-            snap["quiz"] = ev.quiz.public(c.role)
+            snap.update(ev.modules_snapshot(c.role))
+            snap["head"] = ev.head_snapshot()
         if c.role == "tv":
             snap["head"] = ev.head_snapshot()
             snap["stubs"] = self.stubs()
@@ -228,6 +229,55 @@ def _player_quiz_answer(hub: Hub, c: Conn, m: dict):
     return hub.ev.quiz.answer(c.player_id, str(m["qid"]), choice=m.get("choice"), text=m.get("text"))
 
 
+def _in_scene(*scenes: str):
+    """Обёртка: команда работает только в указанных сценах."""
+    def wrap(fn):
+        def handler(hub: Hub, c: Conn, m: dict):
+            if hub.ev.settings["scene"] not in scenes:
+                raise CmdError("Сейчас другая сцена", "wrong_scene")
+            return fn(hub, c, m)
+        return handler
+    return wrap
+
+
+def _shot(hub: Hub, c: Conn, m: dict):
+    if hub.ev.photos.shot_running:
+        raise CmdError("Кадр уже снимается", "busy")
+    asyncio.get_running_loop().create_task(hub.ev.photos.shot(manual=True))
+
+
+HOST_EXTRA: dict[str, Callable] = {
+    # голова
+    "head_speak": lambda hub, c, m: hub.ev.head_speak(),
+    # фото
+    "photo_hide": lambda hub, c, m: hub.ev.photos.set_hidden(int(m["id"]), bool(m.get("hidden", True))),
+    "photo_delete": lambda hub, c, m: hub.ev.photos.delete(int(m["id"])),
+    "shot_now": _shot,
+    # игра
+    "game_start": _in_scene("game")(lambda hub, c, m: hub.ev.game.start(str(m.get("mode", "scored")))),
+    "game_reset": lambda hub, c, m: hub.ev.game.reset(),
+    # резьба
+    "vote_start": _in_scene("carve_vote")(lambda hub, c, m: hub.ev.vote.start()),
+    "vote_close": _in_scene("carve_vote")(lambda hub, c, m: hub.ev.vote.close()),
+    "vote_reveal": _in_scene("carve_reveal")(lambda hub, c, m: hub.ev.vote.reveal_next()),
+    # таймер
+    "timer_set": lambda hub, c, m: hub.ev.timer.set(m["minutes"], m.get("label")),
+    "timer_pause": lambda hub, c, m: hub.ev.timer.pause(bool(m.get("paused", True))),
+    "timer_add": lambda hub, c, m: hub.ev.timer.add(m.get("seconds", 60)),
+    "timer_label": lambda hub, c, m: hub.ev.timer.label(m.get("label", "")),
+    # финал
+    "rating_next": _in_scene("rating_reveal")(lambda hub, c, m: hub.ev.finale.rating_next()),
+    "rating_restart": _in_scene("rating_reveal")(lambda hub, c, m: hub.ev.finale.rating_start()),
+    "slideshow_pause": lambda hub, c, m: hub.ev.finale.slideshow_pause(bool(m.get("paused", True))),
+}
+
+PLAYER_EXTRA: dict[str, Callable] = {
+    "game_progress": lambda hub, c, m: hub.ev.game.progress(c.player_id, m.get("score")),
+    "game_result": lambda hub, c, m: hub.ev.game.result(c.player_id, m.get("caught")),
+    "vote": lambda hub, c, m: hub.ev.vote.vote(c.player_id, m.get("n")),
+}
+
+
 def _host_log(hub: Hub, c: Conn, m: dict):
     pid = m.get("player_id")
     return {"log": hub.ev.recent_log(50, int(pid) if pid else None)}
@@ -288,3 +338,5 @@ COMMANDS: dict[str, dict[str, Callable]] = {
     "player": {"update_profile": _player_profile, "quiz_answer": _player_quiz_answer, "snapshot": _snapshot},
     "carve": {"snapshot": _snapshot},
 }
+COMMANDS["host"].update(HOST_EXTRA)
+COMMANDS["player"].update(PLAYER_EXTRA)

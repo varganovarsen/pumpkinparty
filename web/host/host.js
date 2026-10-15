@@ -2,8 +2,10 @@
 import { Link } from '/web/shared/ws.js';
 import { el, clear, toast, api, fmtTime, offlineBar } from '/web/shared/util.js';
 import { quizPanel } from '/web/host/quiz.js';
+import { ambientPanel, gamePanel, votePanel, timerPanel, ratingPanel, slideshowPanel, finalPhotoPanel, photosSection } from '/web/host/panels.js';
 
-const S = { scene: null, scenes: [], settings: {}, players: [], log: [], nextStep: null, joinUrl: '', tvCount: null, logFilter: '', quiz: null };
+const S = { scene: null, scenes: [], settings: {}, players: [], log: [], nextStep: null, joinUrl: '', tvCount: null, logFilter: '', quiz: null, game: null, vote: null, timer: null, finale: null, head: null };
+const MODULES = ['quiz', 'game', 'vote', 'timer', 'finale'];
 const $ = (id) => document.getElementById(id);
 const evening = $('evening');
 const checkMain = $('check');
@@ -20,6 +22,7 @@ const box = {
   log: el('div', { class: 'log' }),
   logFilter: el('select'),
   adjPlayer: el('select'),
+  photos: el('div'),
 };
 
 const adjAmount = el('input', { type: 'number', inputmode: 'numeric', placeholder: '±очки, например -50' });
@@ -30,6 +33,7 @@ evening.append(
   el('section', { class: 'card' }, el('h2', {}, 'Сцены'), box.scenes),
   el('section', { class: 'card' }, el('h2', {}, 'Текущая сцена'), box.current),
   el('section', { class: 'card' }, el('h2', {}, 'Игроки'), box.players, box.hostProfile),
+  el('section', { class: 'card' }, el('details', {}, el('summary', {}, '🖼 Фото альбома (скрыть / удалить)'), box.photos)),
   el('section', { class: 'card' }, el('h2', {}, 'Голова-тыква'), box.head),
   el('section', { class: 'card' }, el('h2', {}, 'Настройки'), box.settings),
   el('section', { class: 'card' }, el('div', { class: 'row' }, el('h2', { class: 'grow' }, 'Журнал'), box.logFilter), box.log),
@@ -38,6 +42,7 @@ evening.append(
     el('div', { class: 'row', style: { marginTop: '8px' } },
       el('button', { class: 'grow', onclick: () => run('reload_scene', {}, 'Сцена на ТВ перезагружена') }, 'Перезагрузить сцену'),
       el('button', { class: 'grow', onclick: () => run('skip_question', {}, 'Вопрос пропущен') }, 'Пропустить вопрос')),
+    el('button', { style: { width: '100%', marginTop: '8px' }, onclick: () => { if (confirm('Сбросить игру? Очки за игру будут удалены, зачёт можно сыграть заново.')) run('game_reset', {}, 'Игра сброшена'); } }, 'Сбросить игру с падающими тыквами'),
     el('h3', { style: { marginTop: '14px' } }, 'Исправить очки игрока'),
     box.adjPlayer, el('div', { style: { height: '6px' } }), adjAmount, el('div', { style: { height: '6px' } }), adjNote,
     el('button', { style: { width: '100%', marginTop: '6px' }, onclick: adjust }, 'Записать правку'),
@@ -102,16 +107,24 @@ function renderScenes() {
     box.scenes.append(el('button', { class: S.scene?.scene === s.id ? 'on' : '', onclick: () => setScene(s.id) }, s.title));
   }
   clear(box.current);
-  if (S.scene?.scene === 'quiz') {
+  const scene = S.scene?.scene;
+  if (scene === 'quiz') {
     box.current.append(quiz.el);
     quiz.update(S.quiz);
+  } else if (panels[scene]) {
+    box.current.append(panels[scene].el);
+    panels[scene].update(S);
   } else {
-    box.current.append(el('p', { class: 'muted' },
-      S.scene?.scene === 'ambient'
-        ? 'Фон, QR и голова-тыква. Гости делают селфи и режут тыкву на iPad.'
-        : `Управление сценой «${S.scene?.title}» появится вместе с её модулем.`));
+    box.current.append(el('p', { class: 'muted' }, 'QR на скачивание фото — на экране. Сервер не выключать, пока гости скачивают.'));
   }
-  box.current.append(el('button', { style: { marginTop: '10px' }, onclick: () => setScene('ambient'), disabled: S.scene?.scene === 'ambient' }, '← В ambient'));
+  box.current.append(el('button', { style: { marginTop: '10px' }, onclick: () => setScene('ambient'), disabled: scene === 'ambient' }, '← В ambient'));
+}
+
+// обновить раздел текущей сцены без перестройки (например, пришло новое состояние модуля)
+function refreshPanel() {
+  const scene = S.scene?.scene;
+  if (scene === 'quiz') quiz.update(S.quiz);
+  else panels[scene]?.update(S);
 }
 
 function renderPlayers() {
@@ -153,6 +166,7 @@ function renderSettings() {
     toggle('Скрыть общий рейтинг', 'hide_total', 'Телефоны не показывают сумму очков'),
     toggle('Лёгкий фон (без видео)', 'light_mode', 'Если ноутбук не тянет видео'),
     toggle('Карточка новых фото', 'new_photo_card'),
+    toggle('Случайные кадры вебки', 'shots_enabled', 'Раз в 8-15 минут в ambient и перерыве'),
   );
   const loud = S.settings.head_mode === 'loud';
   const interval = el('input', { type: 'number', min: '1', max: '60', value: String(S.settings.head_interval_minutes ?? 6), style: { width: '90px' } });
@@ -166,7 +180,7 @@ function renderSettings() {
       el('button', { class: 'grow', onclick: () => run('head_skip', {}, 'Факт пропущен') }, 'Пропустить факт')),
     el('div', { class: 'row', style: { marginTop: '8px' } },
       el('button', { class: 'grow', onclick: () => setSetting('head_mode', 'quiet') }, 'Тихий режим одним нажатием')),
-    toggle('Голова по таймеру', 'head_enabled', 'Автопоявление включится в модуле 04'),
+    toggle('Голова по таймеру', 'head_enabled', 'Каждые N минут ± 1 в ambient, не раньше 3 минут после другой сцены'),
     el('div', { class: 'toggle' }, el('div', {}, 'Интервал, минут'), interval),
   );
 }
@@ -241,14 +255,21 @@ function onMessage(m) {
   switch (m.t) {
     case 'snapshot':
       S.scene = m.scene; S.scenes = m.scenes; S.settings = m.settings; S.players = m.players;
-      S.log = m.log; S.nextStep = m.next_step; S.joinUrl = m.join_url; S.tvCount = m.tv_count; S.quiz = m.quiz;
+      S.log = m.log; S.nextStep = m.next_step; S.joinUrl = m.join_url; S.tvCount = m.tv_count; S.head = m.head;
+      for (const name of MODULES) S[name] = m[name];
       if (S.logFilter) box.logFilter.dispatchEvent(new Event('change'));
       renderAll();
       break;
     case 'scene': S.scene = m; renderHeader(); renderScenes(); break;
     case 'next_step': S.nextStep = m.next_step; renderNext(); break;
-    case 'quiz': S.quiz = m.quiz; if (S.scene?.scene === 'quiz') quiz.update(S.quiz); break;
-    case 'players': S.players = m.players; renderPlayers(); break;
+    case 'quiz': case 'game': case 'vote': case 'timer': case 'finale':
+      S[m.t] = m[m.t];
+      refreshPanel();
+      break;
+    case 'game_live': if (S.game) { S.game.board = m.board; refreshPanel(); } break;
+    case 'head': S.head = m.head; refreshPanel(); break;
+    case 'photo_added': case 'photo_changed': photos.reload(); break;
+    case 'players': S.players = m.players; renderPlayers(); if (S.scene?.scene === 'carve_vote') refreshPanel(); break;
     case 'settings': S.settings = m.settings; renderSettings(); break;
     case 'tv_count': S.tvCount = m.count; renderHeader(); break;
     case 'log':
@@ -269,5 +290,14 @@ const link = new Link({
   onStatus: (on) => { $('conn').classList.toggle('on', on); offlineBar(on); },
 });
 const quiz = quizPanel(link, run);
+const timer = timerPanel(run);
+timer.setLink(link);
+const vote = votePanel(run);
+const panels = {
+  ambient: ambientPanel(run), game: gamePanel(run), carve_vote: vote, carve_reveal: vote, timer,
+  rating_reveal: ratingPanel(run), slideshow: slideshowPanel(run, (s) => setScene(s)), final_photo: finalPhotoPanel(),
+};
+const photos = photosSection(run);
+box.photos.append(photos.el);
 link.connect();
 if (location.pathname === '/check') showTab('check');

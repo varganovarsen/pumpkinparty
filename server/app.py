@@ -12,9 +12,10 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Request, UploadFile, WebSocket
+from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 from . import assets, carve, images, qr, webcam
 from .backup import make_backup
@@ -91,12 +92,12 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 log.exception("Резервная копия не удалась")
 
     async def tick_loop():
-        """Таймеры сцен (автозакрытие вопроса квиза) по серверному времени."""
+        """Таймеры сцен (квиз, игра, таймер, кадры вебки, голова) по серверному времени."""
         last_save = 0.0
         while True:
             await clock.sleep(0.2)
             try:
-                ev.quiz.tick()
+                ev.tick()
                 if clock.speed != 1 and time.monotonic() - last_save > 1:
                     db.set_setting("clock_now", clock.now())
                     last_save = time.monotonic()
@@ -160,6 +161,10 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     async def download_page():
         return page("play/download.html")
 
+    @app.get("/tools/lipsync-preview")
+    async def lipsync_page():
+        return page("tools/lipsync-preview.html")
+
     # ------------------------------------------------------------------ статика
     app.mount("/web", StaticFiles(directory=WEB), name="web")
     (ROOT / "assets").mkdir(exist_ok=True)
@@ -176,6 +181,21 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         if not p.exists():
             return Response(status_code=404)
         return FileResponse(p, headers={"Cache-Control": "no-cache"})
+
+    @app.get("/media/vote/{n}/{name}")
+    async def vote_media(n: int, name: str):
+        p = ev.vote.file_for(n, name)
+        return FileResponse(p, headers={"Cache-Control": "no-cache"}) if p else Response(status_code=404)
+
+    @app.get("/media/photos/{name}")
+    @app.get("/media/photos/thumb/{name}")
+    async def photo_media(request: Request, name: str):
+        rel = ("thumb/" if "/thumb/" in request.url.path else "") + name
+        p = ev.photos.file_path(rel, include_hidden=request.query_params.get("all") == "1") if MEDIA_RE.match(name) else None
+        if not p:
+            return Response(status_code=404)
+        headers = {"Content-Disposition": f'attachment; filename="{name}"'} if request.query_params.get("dl") else None
+        return FileResponse(p, headers=headers)
 
     @app.get("/media/{kind}/{name}")
     async def media(kind: str, name: str):
@@ -297,6 +317,114 @@ def create_app(cfg: Config | None = None) -> FastAPI:
             return carve.commit(ev, pid, checked)
         except CmdError as e:
             return err(e, 404 if e.code == "not_found" else 409 if e.code == "locked" else 400)
+
+    # ------------------------------------------------------------------ фото (модуль 03)
+    def player_from(token: str | None):
+        p = ev.player_by_token(token)
+        if not p:
+            raise CmdError("Войдите в игру заново", "auth")
+        return p
+
+    async def read_upload(file: UploadFile) -> bytes:
+        data = await file.read(MAX_UPLOAD + 1)
+        if len(data) > MAX_UPLOAD:
+            raise CmdError("Файл слишком большой", "too_big")
+        return data
+
+    @app.post("/api/convert_image")
+    async def convert_image(file: UploadFile = File(...)):
+        """Картинка, которую браузер не открывает сам (HEIC на Android): вернуть JPEG до 2048 px."""
+        try:
+            data = await read_upload(file)
+            loop = asyncio.get_running_loop()
+            img = await loop.run_in_executor(None, images.open_upload, data)
+            out = await loop.run_in_executor(None, images.make_preview, img, 2048)
+        except CmdError as e:
+            return err(e, 413)
+        except Exception:  # noqa: BLE001
+            return err(CmdError("Не получилось открыть фото", "bad_image"), 400)
+        return Response(out, media_type="image/jpeg")
+
+    @app.post("/api/photo")
+    async def upload_selfie(token: str = Form(""), file: UploadFile = File(...)):
+        try:
+            p = player_from(token)
+            data = await read_upload(file)
+            loop = asyncio.get_running_loop()
+            img = await loop.run_in_executor(None, images.open_upload, data)
+            files = await loop.run_in_executor(None, ev.photos.prepare, img)
+        except CmdError as e:
+            return err(e, 403 if e.code == "auth" else 400)
+        except Exception:  # noqa: BLE001
+            log.exception("Селфи не сохранилось")
+            return err(CmdError("Фото не сохранилось, попробуйте ещё раз", "bad_image"), 400)
+        return {"ok": True, "photo": ev.photos.commit(files, "selfie", p.id)}
+
+    @app.post("/api/final_photo")
+    async def upload_final(file: UploadFile = File(...)):
+        try:
+            data = await read_upload(file)
+            files = await asyncio.get_running_loop().run_in_executor(None, ev.photos.prepare_final, data)
+        except CmdError as e:
+            return err(e, 413)
+        except Exception:  # noqa: BLE001
+            log.exception("Финальное фото не обработалось")
+            return err(CmdError("Фото не обработалось, переснимите", "bad_image"), 400)
+        photo = ev.photos.commit(files, "final", None)
+        ev.finale.set_final_photo(photo["id"])
+        return {"ok": True, "photo": photo}
+
+    @app.get("/api/photos")
+    async def list_photos(all: int = 0, final_first: int = 0):
+        return {"photos": ev.photos.list(include_hidden=bool(all), final_first=bool(final_first))}
+
+    @app.get("/api/me")
+    async def me(token: str = ""):
+        p = ev.player_by_token(token)
+        return {"me": ev.me(p.id) if p else None}
+
+    @app.get("/api/pumpkins")
+    async def list_pumpkins():
+        """Снимки всех тыкв с авторами — только после раскрытия итогов резьбы."""
+        if not ev.vote.st["revealed"]:
+            return {"revealed": False, "pumpkins": []}
+        out = []
+        for r in ev.vote.st["results"]:
+            pl = ev.players.get(r["player_id"])
+            info = carve.info(ev, r["player_id"])
+            if info["exists"]:
+                out.append({"player_id": r["player_id"], "name": pl.name if pl else "?", "votes": r["votes"],
+                            "place": r["place"], "shots": info["shots"]})
+        return {"revealed": True, "pumpkins": out}
+
+    @app.post("/api/download_zip")
+    async def download_zip(request: Request):
+        form = await request.form()
+        ids = [int(x) for x in str(form.get("ids", "")).split(",") if x.strip().isdigit()]
+        pumpkin_ids = [int(x) for x in str(form.get("pumpkins", "")).split(",") if x.strip().isdigit()]
+        extra = []
+        if ev.vote.st["revealed"]:
+            for pid in pumpkin_ids:
+                pl = ev.players.get(pid)
+                for shot in carve.SHOT_NAMES:
+                    extra.append((carve.pumpkin_dir(ev, pid) / f"{shot}.jpg",
+                                  f"tykva-{(pl.name if pl else pid)}-{shot}.jpg"))
+        if not ids and not extra:
+            return err(CmdError("Ничего не выбрано", "empty"), 400)
+        path = await asyncio.get_running_loop().run_in_executor(None, ev.photos.zip_file, ids, extra)
+        return FileResponse(path, media_type="application/zip", filename="tykvenny-spas.zip",
+                            background=BackgroundTask(path.unlink, missing_ok=True))
+
+    # ------------------------------------------------------------------ липсинк (модуль 04)
+    @app.get("/api/lipsync")
+    async def lipsync_list():
+        d = cfg.content_dir / "audio"
+        out = []
+        for mp3 in sorted(d.glob("*.mp3")):
+            js = mp3.with_suffix(".lipsync.json")
+            out.append({"name": mp3.name, "audio_url": f"/content/audio/{mp3.name}",
+                        "lipsync_url": f"/content/audio/{js.name}" if js.exists() else None})
+        return {"files": out}
 
     @app.get("/api/check")
     async def check():

@@ -5,11 +5,94 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Фото вечера — Тыквенный спас</title>
 <link rel="stylesheet" href="/web/shared/ui.css">
+<style>
+  main { max-width: 640px; margin: 0 auto; padding: 14px 14px 110px; }
+  h1 { text-align: center; margin: 14px 0 4px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .cell { position: relative; padding: 0; min-height: 0; aspect-ratio: 1; overflow: hidden; border-radius: 8px; border: 3px solid transparent; background: var(--panel); }
+  .cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cell.sel { border-color: var(--accent); }
+  .cell .chk { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; background: #000a; border: 2px solid #fff; display: grid; place-items: center; font-weight: 800; }
+  .cell.sel .chk { background: var(--accent); color: #1b0e04; }
+  .cell .tag { position: absolute; left: 4px; bottom: 4px; background: #000b; border-radius: 6px; padding: 1px 6px; font-size: .75rem; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 8px; }
+  .bar button { flex: 1; }
+  h2 { margin-top: 22px; }
+</style>
 </head>
 <body>
-<main style="max-width:560px;margin:20vh auto;text-align:center;padding:0 16px">
+<main>
   <h1>📸 Фото вечера</h1>
-  <p class="muted">Страница скачивания появится вместе с альбомом (модуль 03).</p>
+  <p class="muted" style="text-align:center">Отметь фото и скачай. Одно фото откроется для сохранения, несколько — придут архивом.</p>
+  <div id="photos" class="grid"></div>
+  <div id="pumpkins-box" class="hidden"><h2>🎃 Тыквы</h2><div id="pumpkins" class="grid"></div></div>
 </main>
+<div class="bar">
+  <button id="all">Выбрать все</button>
+  <button id="get" class="primary" disabled>Скачать (0)</button>
+</div>
+<script type="module">
+  import { el, clear, toast, store } from '/web/shared/util.js';
+  const sel = new Set();      // фото: id
+  const selP = new Set();     // тыквы: player_id
+  let photos = [];
+  let pumpkins = [];
+  const $ = (id) => document.getElementById(id);
+
+  function updateBar() {
+    const n = sel.size + selP.size;
+    $('get').textContent = `Скачать (${n})`;
+    $('get').disabled = !n;
+    $('all').textContent = n === photos.length + pumpkins.length && n ? 'Снять все' : 'Выбрать все';
+  }
+  function cell(img, tag, set, key) {
+    const b = el('button', { class: `cell${set.has(key) ? ' sel' : ''}` }, el('img', { src: img, alt: '', loading: 'lazy' }),
+      el('span', { class: 'chk' }, '✓'), tag ? el('span', { class: 'tag' }, tag) : null);
+    b.addEventListener('click', () => { if (set.has(key)) set.delete(key); else set.add(key); b.classList.toggle('sel'); updateBar(); });
+    return b;
+  }
+  function render() {
+    clear($('photos'));
+    if (!photos.length) $('photos').append(el('p', { class: 'muted' }, 'Фото пока нет'));
+    for (const p of photos) $('photos').append(cell(p.thumb_url, p.kind === 'final' ? '🏁 финальное' : p.kind === 'webcam' ? '📷' : p.author_name, sel, p.id));
+    clear($('pumpkins'));
+    for (const p of pumpkins) $('pumpkins').append(cell(p.shots.dark, p.mine ? `Моя · ${p.name}` : p.name, selP, p.player_id));
+    $('pumpkins-box').classList.toggle('hidden', !pumpkins.length);
+    updateBar();
+  }
+  async function load() {
+    const [ph, pu, me] = await Promise.all([
+      fetch('/api/photos?final_first=1').then((r) => r.json()),
+      fetch('/api/pumpkins').then((r) => r.json()),
+      fetch(`/api/me?token=${encodeURIComponent(store('pumpkin.token') || '')}`).then((r) => r.json()),
+    ]);
+    photos = ph.photos;
+    pumpkins = pu.pumpkins.map((p) => ({ ...p, mine: me.me && p.player_id === me.me.id }));
+    pumpkins.sort((a, b) => b.mine - a.mine);
+    render();
+  }
+  $('all').addEventListener('click', () => {
+    const all = sel.size + selP.size === photos.length + pumpkins.length;
+    sel.clear(); selP.clear();
+    if (!all) { photos.forEach((p) => sel.add(p.id)); pumpkins.forEach((p) => selP.add(p.player_id)); }
+    render();
+  });
+  $('get').addEventListener('click', async () => {
+    if (sel.size === 1 && !selP.size) {
+      const p = photos.find((x) => sel.has(x.id));
+      location.href = `${p.url}?dl=1`;
+      return;
+    }
+    // несколько: сервер собирает ZIP (обычная отправка формы — работает и в Safari)
+    const f = el('form', { method: 'POST', action: '/api/download_zip', class: 'hidden' },
+      el('input', { type: 'hidden', name: 'ids', value: [...sel].join(',') }),
+      el('input', { type: 'hidden', name: 'pumpkins', value: [...selP].join(',') }));
+    document.body.append(f);
+    f.submit();
+    f.remove();
+    toast('Архив готовится, подожди немного…', 4000);
+  });
+  load().catch(() => toast('Нет связи с сервером'));
+</script>
 </body>
 </html>

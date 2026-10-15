@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Предпросмотр липсинка</title>
+<link rel="stylesheet" href="/web/shared/ui.css">
+<style>
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  canvas { width: 100%; height: 260px; background: #0006; border-radius: 10px; display: block; }
+  .mouth { width: 120px; height: 120px; border-radius: 50%; background: #e8761a; margin: 10px auto; position: relative; }
+  .mouth i { position: absolute; left: 25%; right: 25%; top: 55%; height: 4px; background: #2a1003; border-radius: 0 0 40px 40px; }
+  select { max-width: 360px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Липсинк головы-тыквы</h1>
+  <p class="muted">Волна громкости, mouth (оранжевым, 0-100) и viseme (жёлтым, 0-4) по времени. Подкрутить:
+    <code>python tools/make_lipsync.py content/audio/f001.mp3 --smooth 3 --silence 0.08 --low 900 --high 2200</code> и обновить страницу.</p>
+  <div class="row"><select id="file"></select><button id="play" class="primary">▶ Играть</button><span id="info" class="muted"></span></div>
+  <canvas id="plot"></canvas>
+  <div class="mouth"><i id="m"></i></div>
+  <p class="center" id="vis"></p>
+</main>
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const audio = new Audio();
+  let data = null;
+  let peaks = [];
+  const files = (await (await fetch('/api/lipsync')).json()).files;
+  for (const f of files) $('file').append(new Option(`${f.name}${f.lipsync_url ? '' : ' (нет JSON)'}`, f.name));
+  if (!files.length) $('info').textContent = 'В content/audio нет mp3';
+
+  async function load() {
+    const f = files.find((x) => x.name === $('file').value);
+    if (!f) return;
+    audio.src = f.audio_url;
+    data = f.lipsync_url ? await (await fetch(f.lipsync_url)).json() : null;
+    const buf = await new AudioContext().decodeAudioData(await (await fetch(f.audio_url)).arrayBuffer());
+    const ch = buf.getChannelData(0);
+    const n = 600;
+    const step = Math.floor(ch.length / n);
+    peaks = Array.from({ length: n }, (_, i) => { let m = 0; for (let j = i * step; j < (i + 1) * step; j++) m = Math.max(m, Math.abs(ch[j])); return m; });
+    $('info').textContent = `${buf.duration.toFixed(1)} с, кадров: ${data ? data.frames.length : 'нет JSON'}`;
+    draw();
+  }
+  function draw() {
+    const c = $('plot'); const W = c.width = c.clientWidth; const H = c.height = c.clientHeight;
+    const g = c.getContext('2d');
+    g.fillStyle = '#ffffff30';
+    peaks.forEach((p, i) => g.fillRect((i / peaks.length) * W, H / 2 - p * H / 2, W / peaks.length, p * H));
+    if (data) {
+      const dur = data.frames.length / data.fps;
+      g.strokeStyle = '#e8761a'; g.beginPath();
+      data.frames.forEach((f, i) => { const x = (f.t / dur) * W; const y = H - (f.mouth / 100) * H; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+      g.stroke();
+      g.fillStyle = '#ffd27a';
+      data.frames.forEach((f) => g.fillRect((f.t / dur) * W, H - 6 - f.viseme * 8, 2, 4));
+    }
+    if (audio.duration) { g.fillStyle = '#fff'; g.fillRect((audio.currentTime / audio.duration) * W, 0, 2, H); }
+  }
+  const NAMES = ['закрыт', 'слегка открыт', 'а', 'о/у', 'э/и'];
+  function loop() {
+    requestAnimationFrame(loop);
+    if (audio.paused) return;
+    draw();
+    if (data) {
+      const f = data.frames[Math.min(data.frames.length - 1, Math.floor(audio.currentTime * data.fps))];
+      $('m').style.height = `${4 + f.mouth * 0.5}px`;
+      $('vis').textContent = `mouth ${f.mouth} · viseme ${f.viseme} (${NAMES[f.viseme]})`;
+    }
+  }
+  $('file').addEventListener('change', load);
+  $('play').addEventListener('click', () => { audio.currentTime = 0; audio.play(); });
+  await load();
+  loop();
+</script>
+</body>
+</html>

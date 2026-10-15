@@ -1,8 +1,12 @@
 // Страница игрока: вход, профиль, вкладки, реакция на сцены (модуль 01, каркас).
 import { Link } from '/web/shared/ws.js';
-import { el, clear, toast, api, store, offlineBar, vibrate } from '/web/shared/util.js';
+import { el, clear, toast, api, store, offlineBar, vibrate, fmtClock } from '/web/shared/util.js';
 import { avatarPicker } from '/web/play/avatar_picker.js';
 import { mountQuiz } from '/web/play/quiz.js';
+import { mountGame } from '/web/play/game.js';
+import { mountVote } from '/web/play/vote.js';
+import { mountPhotoTab } from '/web/play/editor.js';
+import { mountAlbum } from '/web/play/album.js';
 
 const TOKEN_KEY = 'pumpkin.token';
 const TAB_KEY = 'pumpkin.tab';
@@ -12,12 +16,10 @@ const asHost = params.get('as_host') === '1';
 
 // Сцены без участия: тонкая плашка сверху, вкладки остаются.
 const BANNERS = {
-  timer: 'Перерыв',
   slideshow: 'Идёт слайд-шоу',
   final_photo: 'Финальное фото — все в кадр!',
   rating_reveal: 'Раскрываем общий рейтинг',
   carve_reveal: 'Итоги резьбы на экране',
-  download: 'Фото вечера можно скачать',
 };
 const TABS = [
   { id: 'photo', icon: '📷', title: 'Фото' },
@@ -111,13 +113,17 @@ function startLink(token) {
   S.link.connect();
 }
 
+const MODULES = ['quiz', 'game', 'vote', 'timer', 'finale'];
+const VIEWS = { quiz: [mountQuiz, 'quiz'], game: [mountGame, 'game'], carve_vote: [mountVote, 'vote'] };
+
 function onMessage(m) {
   switch (m.t) {
     case 'snapshot':
       S.me = m.me; S.scene = m.scene; S.settings = m.settings; S.facts = m.facts; S.taken = m.avatars_taken;
-      S.factsLocked = !!m.facts_locked; S.quiz = m.quiz;
+      S.factsLocked = !!m.facts_locked;
+      for (const name of MODULES) S[name] = m[name];
       render();
-      quizView?.update(S.quiz);
+      view?.update(S[view.module]);
       break;
     case 'scene': {
       const was = S.scene?.participating;
@@ -129,7 +135,12 @@ function onMessage(m) {
     case 'me': S.me = m.me; renderTop(); break;
     case 'settings': S.settings = m.settings; renderTop(); break;
     case 'facts': S.facts = m.facts; S.factsLocked = !!m.locked; if (S.tab === 'facts' && !S.scene?.participating) renderTab(); break;
-    case 'quiz': S.quiz = m.quiz; quizView?.update(S.quiz); break;
+    case 'quiz': case 'game': case 'vote': case 'timer': case 'finale':
+      S[m.t] = m[m.t];
+      if (view?.module === m.t) view.update(S[m.t]);
+      if (m.t === 'timer') renderBanner();
+      break;
+    case 'photo_added': case 'photo_changed': tabView?.onMessage?.(m); break;
     case 'avatars_taken': S.taken = m.taken; break;
     case 'reset':
       store(TOKEN_KEY, null);
@@ -143,7 +154,9 @@ function onMessage(m) {
 
 // ---------------------------------------------------------------- основной экран
 let topEl, bannerEl, mainEl, tabsEl;
-let quizView = null;
+let view = null;     // полноэкранная сцена с участием: {module, update, unmount}
+let tabView = null;  // вкладка «Фото» или «Альбом»
+let bannerTimer = null;
 
 let renderedKey = null;
 
@@ -157,8 +170,10 @@ function render(force = false) {
     return;
   }
   renderedKey = key;
-  quizView?.unmount();
-  quizView = null;
+  view?.unmount();
+  view = null;
+  tabView?.unmount();
+  tabView = null;
   topEl = el('div', { class: 'topbar' });
   bannerEl = el('div');
   mainEl = el('div');
@@ -180,9 +195,25 @@ function render(force = false) {
 
 function renderBanner() {
   if (!bannerEl) return;
-  const banner = !S.scene.participating && BANNERS[S.scene.scene];
+  clearInterval(bannerTimer);
   clear(bannerEl);
-  if (banner) bannerEl.append(el('div', { class: 'scene-banner' }, banner));
+  if (S.scene.participating) return;
+  const scene = S.scene.scene;
+  if (scene === 'timer') {
+    const b = el('div', { class: 'scene-banner' });
+    const upd = () => {
+      const t = S.timer || {};
+      const left = t.finished ? 'время вышло' : t.running ? fmtClock(t.end_at_ms - S.link.serverNow()) : t.left_ms != null ? `${fmtClock(t.left_ms)} (пауза)` : '';
+      b.textContent = `${t.label || 'Перерыв'}${left ? `: ${left}` : ''}`;
+    };
+    upd();
+    bannerTimer = setInterval(upd, 500);
+    bannerEl.append(b);
+  } else if (scene === 'download') {
+    bannerEl.append(el('a', { class: 'btn primary scene-banner big-link', href: '/download' }, '📸 Скачать фото вечера'));
+  } else if (BANNERS[scene]) {
+    bannerEl.append(el('div', { class: 'scene-banner' }, BANNERS[scene]));
+  }
 }
 
 function renderTop() {
@@ -196,35 +227,26 @@ function renderTop() {
 }
 
 function renderParticipating() {
-  // Полноэкранный режим без вкладок. Игра и голосование появятся в модулях 05, 06.
-  if (S.scene.scene === 'quiz') {
-    quizView = mountQuiz(mainEl, S.link);
-    quizView.update(S.quiz);
-    return;
-  }
-  mainEl.append(el('div', { class: 'fullscene' },
-    el('div', { class: 'big' }, S.scene.title),
-    el('p', { class: 'muted' }, 'Смотри на экран телевизора — сейчас начнётся!'),
-  ));
+  // Полноэкранный режим без вкладок: квиз, игра, голосование за резьбу
+  const spec = VIEWS[S.scene.scene];
+  if (!spec) return;
+  const [mount, module] = spec;
+  view = { module, ...mount(mainEl, S.link) };
+  view.update(S[module]);
 }
 
 function renderTab() {
   clear(mainEl);
   if (S.tab === 'photo') {
-    mainEl.append(el('div', { class: 'card center' },
-      el('h2', {}, 'Селфи'),
-      el('p', { class: 'muted' }, 'Фото с фильтрами и наклейками появятся совсем скоро.')));
+    tabView = mountPhotoTab(mainEl, { link: S.link, getToken: () => store(TOKEN_KEY), stickers: S.info.stickers || [] });
   } else if (S.tab === 'album') {
-    mainEl.append(el('div', { class: 'card center' },
-      el('h2', {}, 'Общий альбом'),
-      el('p', { class: 'muted' }, 'Здесь будут фото гостей и кадры вечера.')));
+    tabView = mountAlbum(mainEl, { getMe: () => S.me });
   } else if (S.tab === 'facts') {
     renderFacts();
   } else {
     renderProfile();
   }
 }
-
 function renderFacts() {
   if (S.factsLocked) {
     mainEl.append(el('div', { class: 'card center' }, el('h2', {}, 'Факты от тыквы'),

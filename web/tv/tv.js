@@ -6,7 +6,17 @@ import { el, clear } from '/web/shared/util.js';
 const SCENE_MODULES = {
   ambient: './scenes/ambient.js',
   quiz: './scenes/quiz.js',
+  game: './scenes/game.js',
+  timer: './scenes/timer.js',
+  carve_vote: './scenes/carve_vote.js',
+  carve_reveal: './scenes/carve_reveal.js',
+  rating_reveal: './scenes/rating_reveal.js',
+  final_photo: './scenes/final_photo.js',
+  slideshow: './scenes/slideshow.js',
+  download: './scenes/download.js',
 };
+// Модули сцен с состоянием от сервера: снимок и события {t: имя, имя: {...}}.
+const MODULES = ['quiz', 'game', 'vote', 'timer', 'finale'];
 
 const stage = document.getElementById('stage');
 const overlay = document.getElementById('overlay');
@@ -55,7 +65,8 @@ function onMessage(m) {
   switch (m.t) {
     case 'snapshot':
       ctx.scene = m.scene; ctx.settings = m.settings; ctx.players = m.players;
-      ctx.joinUrl = m.join_url; ctx.stubs = m.stubs; ctx.head = m.head; ctx.quiz = m.quiz;
+      ctx.joinUrl = m.join_url; ctx.stubs = m.stubs; ctx.head = m.head;
+      for (const name of MODULES) ctx[name] = m[name];
       remount(true);
       break;
     case 'scene':
@@ -75,9 +86,12 @@ function onMessage(m) {
       ctx.head = m.head;
       current?.inst.onMessage?.(m);
       break;
-    case 'quiz':
-      ctx.quiz = m.quiz;
+    case 'quiz': case 'game': case 'vote': case 'timer': case 'finale':
+      ctx[m.t] = m[m.t];
       current?.inst.onMessage?.(m);
+      break;
+    case 'shot':
+      showShot(m);
       break;
     case 'sound_test':
       sfx('correct');
@@ -92,6 +106,22 @@ function onMessage(m) {
     default:
       current?.inst.onMessage?.(m);
   }
+}
+
+// Случайный кадр вебки: «Сейчас вылетит птичка!» 3 с → щелчок → фото 4 с с 📷 (поверх любой сцены).
+let shotEl = null;
+function showShot(m) {
+  shotEl?.remove();
+  shotEl = null;
+  if (m.stage === 'countdown') {
+    shotEl = el('div', { class: 'shot-overlay' }, el('div', { class: 'shot-text' }, 'Сейчас вылетит птичка! 🐦'));
+  } else if (m.stage === 'taken') {
+    sfx('shutter');
+    shotEl = el('div', { class: 'shot-overlay flash' }, el('img', { src: m.photo.url, alt: '' }), el('div', { class: 'shot-cam' }, '📷'));
+    const mine = shotEl;
+    setTimeout(() => { if (shotEl === mine) { mine.remove(); shotEl = null; } }, (m.seconds || 4) * 1000);
+  }
+  if (shotEl) overlay.append(shotEl);
 }
 
 function startScreen() {

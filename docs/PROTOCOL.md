@@ -15,6 +15,16 @@
 | `POST /api/claim` | `{name}` | «Это я?»: `{ok, token, me}`, только если игрок не в сети |
 | `GET /api/check` | — | `{items:[{id,title,status: ok\|warn\|fail\|info, detail, items}], summary}` |
 | `GET /api/webcam_test` | — | JPEG или 503 `{error}` |
+| `POST /api/photo` | multipart `token`, `file` (готовое селфи из редактора) | `{ok, photo}`; фото сжимается до 2048 px, превью 400 px |
+| `POST /api/final_photo` | multipart `file` (снимок ведущего) | `{ok, photo}`: оригинал сохранён, обрезка 4:3, рамка `overlay/final-frame.png`, до 3000 px |
+| `POST /api/convert_image` | multipart `file` | JPEG до 2048 px — для картинок, которые браузер не открывает сам (HEIC на Android) |
+| `GET /api/photos?all=&final_first=` | — | `{photos: [{id, kind: selfie\|webcam\|final, author_id, author_name, url, thumb_url, hidden, created_at}]}`; без `all` — только видимые |
+| `GET /media/photos/<name>`, `/media/photos/thumb/<name>` | `?dl=1` — скачать, `?all=1` — показать и скрытое (для /host) | файл |
+| `POST /api/download_zip` | форма `ids=1,2,3`, `pumpkins=<player_id,…>` | ZIP (временный файл удаляется после отдачи) |
+| `GET /api/me?token=` | — | `{me}` или `{me: null}` (страница скачивания: «Моя» тыква) |
+| `GET /api/pumpkins` | — | после раскрытия итогов резьбы: `{revealed, pumpkins: [{player_id, name, votes, place, shots}]}` |
+| `GET /media/vote/<n>/<файл>` | — | файлы тыквы по анонимному номеру голосования |
+| `GET /api/lipsync` | — | список `content/audio/*.mp3` и их `.lipsync.json` (для `/tools/lipsync-preview`) |
 | `GET /api/pumpkin/{player_id}` | — | `{exists, version, camera:{theta,phi,radius}, mask_size, masks:{through,depth}, shots:{lit,dark,side}}` (URL с `?v=версия`) |
 | `POST /api/pumpkin/{player_id}` | multipart: `through.png`, `depth.png` (маски развёртки, квадрат, одинаковый размер), `lit.jpg`, `dark.jpg`, `side.jpg`, `camera` (JSON) | то же, что GET, + `ok`; ошибки `bad_mask`, `bad_shot`, `bad_request`, `not_found`, `locked` (идёт голосование) |
 
@@ -93,8 +103,13 @@
 | `me` | конкретный player | `me` |
 | `avatars_taken` | player | `taken` |
 | `facts` | player | `facts`, `locked` |
-| `quiz` | tv, host, каждый player | `quiz` (вид для роли) |
-| `head` | tv | `head = {fact_id, text, audio_url, mode, seconds, called_at}` или `null` |
+| `quiz`, `game`, `vote`, `timer`, `finale` | tv, host, каждый player | состояние модуля для роли (см. ниже) |
+| `game_live` | tv, host | `board` — живой рейтинг игры, не чаще раза в секунду |
+| `photo_added` | tv, host, player | `photo` |
+| `photo_changed` | tv, host, player | `id, hidden?, deleted?` |
+| `shot` | tv | случайный кадр: `stage: countdown\|taken\|failed`, `seconds`, `photo` |
+| `head_speak` | tv | «Озвучить»: проиграть озвучку текущего факта с начала |
+| `head` | tv, host | `head = {fact_id, text, audio_url, lipsync_url, mode, seconds, called_at}` или `null` |
 | `log` | host | `entry = {id, ts, player_id, text}` |
 | `next_step` | host | `next_step` |
 | `tv_count` | host | `count` |
@@ -122,5 +137,33 @@
 | host | `head_call`, `head_skip` | — |
 | tv | `head_shown`, `head_done` | `fact_id` |
 | player | `update_profile` | `avatar_kind, avatar_ref` |
+| host | `head_speak`, `shot_now` | — |
+| host | `photo_hide` | `id, hidden` |
+| host | `photo_delete` | `id` → файлы в `data/_deleted/` |
+| host | `game_start` | `mode: practice\|scored` (сцена `game`); `game_reset` — аварийный сброс очков игры |
+| host | `vote_start`, `vote_close` (сцена `carve_vote`), `vote_reveal` (сцена `carve_reveal`) | — |
+| host | `timer_set` | `minutes, label?`; `timer_pause {paused}`, `timer_add {seconds}`, `timer_label {label}` |
+| host | `rating_next`, `rating_restart` (сцена `rating_reveal`), `slideshow_pause {paused}` | — |
+| player | `game_progress` | `score` — живой счёт; `game_result {caught: [i…]}` → `{score}` (сервер пересчитывает по расписанию) |
+| player | `vote` | `n` (номер тыквы) или `null` — воздержаться; свою нельзя (`own`) |
 | player | `quiz_answer` | `qid, choice (0-3)` или `qid, text` → ошибки `closed`, `late`, `already`, `bad_answer` |
 | все | `snapshot` | — (прислать снимок заново) |
+
+### Игра (`game`)
+
+`{mode: practice|scored|null, phase: idle|countdown|running|finished, scored_done, start_at_ms, end_at_ms, board}`.
+Игроку, который был в сети на старте, во время отсчёта и игры приходят `items: [{i, t, x, kind, fall, land}]` и `points`;
+`t` — появление (с от старта), `land = t + fall` — пересечение линии корзины. `my = {eligible, result}`.
+Результат принимается до конца игры + 5 с; кто не прислал — 0.
+
+### Голосование и итоги резьбы (`vote`)
+
+`{phase: idle|open|closed, entries: [{n, shots: {lit, dark, side}, masks? (tv/host)}], voted_count, voters_total,
+reveal_step, revealed}`. Игроку: `my = {own, vote, abstained}`. После закрытия: `results` — уже раскрытые записи
+(ведущему все) `[{n, player_id, name, avatar_url, votes, place|null, bonus}]` от последнего места к первому, `total`.
+
+### Таймер (`timer`) и финал (`finale`)
+
+`timer = {label, running, finished, end_at_ms, left_ms}` (`left_ms` — на паузе).
+`finale = {step, groups_total, groups: [[{player_id, name, avatar_url, total, place, breakdown: {quiz, game, carve, manual}}]],
+slideshow_paused, final_photo}`: группы от последнего места к первому, ничьи в одной группе; не ведущему — только раскрытые.
