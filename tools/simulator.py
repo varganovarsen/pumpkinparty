@@ -1,0 +1,349 @@
+"""Симулятор вечера (модуль 08): виртуальные игроки по WebSocket, как настоящие телефоны.
+
+    python tools/simulator.py --players 8 --speed 30 --scenario evening
+
+По умолчанию поднимает свой сервер на свободном порту с временной папкой данных
+(настоящий data/ не трогается) и в середине прогона перезапускает его.
+С --url работает с уже запущенным сервером (без перезапуска).
+
+Сценарии:
+  core     — вход, профили, переключение всех сцен, обрывы и возвраты, ручные правки очков,
+             перезапуск сервера, сверка очков.
+  evening  — весь вечер. Сейчас = core; квиз, игра и резьба добавляются на своих этапах.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import io
+import json
+import os
+import random
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+import httpx
+import websockets
+
+ROOT = Path(__file__).resolve().parent.parent
+SCENES = ["ambient", "quiz", "game", "timer", "carve_vote", "carve_reveal",
+          "rating_reveal", "final_photo", "slideshow", "download"]
+NOT_YET = ["квиз (этап 3)", "игра (этап 5)", "голосование за резьбу (этап 5)"]
+
+
+class Report:
+    def __init__(self):
+        self.problems: list[str] = []
+        self.steps: list[str] = []
+
+    def step(self, text: str) -> None:
+        self.steps.append(text)
+        print(f"  ✓ {text}")
+
+    def fail(self, text: str) -> None:
+        self.problems.append(text)
+        print(f"  ✗ {text}")
+
+    def check(self, cond: bool, ok: str, bad: str) -> None:
+        self.step(ok) if cond else self.fail(bad)
+
+
+# ---------------------------------------------------------------------- сервер
+class ServerProc:
+    def __init__(self, speed: float):
+        self.speed = speed
+        self.port = _free_port()
+        self.data = Path(tempfile.mkdtemp(prefix="pumpkin-sim-"))
+        self.proc: subprocess.Popen | None = None
+        self.url = f"http://127.0.0.1:{self.port}"
+        self.log = open(self.data / "sim-server.out", "ab")
+
+    async def start(self) -> None:
+        cmd = [sys.executable, "-m", "server", "--port", str(self.port), "--data", str(self.data),
+               "--speed", str(self.speed), "--bind", "127.0.0.1"]
+        self.proc = subprocess.Popen(cmd, cwd=ROOT, stdout=self.log, stderr=subprocess.STDOUT)
+        await wait_health(self.url)
+
+    async def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+
+    def crashed(self) -> bool:
+        return self.proc is not None and self.proc.poll() is not None
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+async def wait_health(url: str, timeout: float = 30) -> None:
+    deadline = time.monotonic() + timeout
+    async with httpx.AsyncClient() as c:
+        while time.monotonic() < deadline:
+            try:
+                if (await c.get(f"{url}/api/health", timeout=1)).status_code == 200:
+                    return
+            except httpx.HTTPError:
+                pass
+            await asyncio.sleep(0.2)
+    raise RuntimeError(f"сервер {url} не поднялся за {timeout} с")
+
+
+# ---------------------------------------------------------------------- клиенты
+class Client:
+    """Одно WebSocket-подключение с фоновым чтением и автопереподключением."""
+
+    def __init__(self, base: str, role: str, token: str | None = None, name: str = ""):
+        self.base = base
+        self.role = role
+        self.token = token
+        self.name = name or role
+        self.ws = None
+        self.task: asyncio.Task | None = None
+        self.scene: str | None = None
+        self.snapshot: dict | None = None
+        self.messages: list[dict] = []
+        self.replies: dict[int, asyncio.Future] = {}
+        self.next_id = 1
+        self.connected = asyncio.Event()
+        self.reconnects = 0
+        self.want = True
+
+    def ws_url(self) -> str:
+        u = self.base.replace("http://", "ws://") + f"/ws?role={self.role}"
+        return u + (f"&token={self.token}" if self.token else "")
+
+    async def run(self) -> None:
+        while self.want:
+            try:
+                async with websockets.connect(self.ws_url(), open_timeout=5) as ws:
+                    self.ws = ws
+                    async for raw in ws:
+                        self._on(json.loads(raw))
+            except (OSError, websockets.WebSocketException, asyncio.TimeoutError):
+                pass
+            self.ws = None
+            self.connected.clear()
+            if self.want:
+                self.reconnects += 1
+                await asyncio.sleep(0.3)
+
+    def start(self) -> None:
+        self.want = True
+        self.task = asyncio.create_task(self.run())
+
+    async def drop(self) -> None:
+        """Обрыв связи (как телефон, ушедший из wifi)."""
+        self.want = False
+        if self.ws:
+            await self.ws.close()
+        if self.task:
+            await asyncio.wait([self.task], timeout=3)
+
+    def _on(self, m: dict) -> None:
+        self.messages.append(m)
+        t = m.get("t")
+        if t == "snapshot":
+            self.snapshot = m
+            self.scene = m["scene"]["scene"]
+            self.connected.set()
+        elif t == "scene":
+            self.scene = m["scene"]
+        elif t == "reply":
+            fut = self.replies.pop(m.get("id"), None)
+            if fut and not fut.done():
+                fut.set_result(m)
+        elif t == "players" and self.snapshot is not None:
+            self.snapshot["players"] = m["players"]
+
+    async def cmd(self, name: str, **args) -> dict:
+        await asyncio.wait_for(self.connected.wait(), 10)
+        rid = self.next_id
+        self.next_id += 1
+        fut = asyncio.get_running_loop().create_future()
+        self.replies[rid] = fut
+        await self.ws.send(json.dumps({"t": "cmd", "cmd": name, "id": rid, **args}))
+        return await asyncio.wait_for(fut, 10)
+
+
+async def wait_for(cond, timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if cond():
+            return True
+        await asyncio.sleep(0.05)
+    return cond()
+
+
+def tiny_jpeg() -> bytes:
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (320, 240), (random.randint(0, 255), 120, 60)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------- сценарий
+async def scenario_core(base: str, n_players: int, rep: Report, server: ServerProc | None) -> None:
+    http = httpx.AsyncClient(base_url=base, timeout=10)
+    expected: dict[int, int] = {}
+
+    print("Вход и профили")
+    host = Client(base, "host")
+    tv = Client(base, "tv")
+    host.start()
+    tv.start()
+    await asyncio.wait_for(host.connected.wait(), 10)
+    tv_ok = await wait_for(lambda: tv.connected.is_set(), 5)
+    rep.check(tv_ok, "ТВ подключился с localhost", "ТВ не подключился")
+    # чистый старт: если сервер внешний, сбрасываем вечер
+    if server is None:
+        await host.cmd("reset_evening", confirm="СБРОС")
+        await asyncio.sleep(0.5)
+
+    players: list[Client] = []
+    for i in range(n_players):
+        name = f"Игрок {i + 1}"
+        if i == n_players - 1:  # последний — с фото-профилем
+            up = (await http.post("/api/upload_avatar", files={"file": ("p.jpg", tiny_jpeg(), "image/jpeg")})).json()
+            crop = (await http.post("/api/avatar_crop", json={"upload_id": up["upload_id"], "cx": .5, "cy": .5, "size": .8})).json()
+            body = {"name": name, "avatar_kind": "photo", "avatar_ref": crop["avatar_ref"]}
+        else:
+            body = {"name": name, "avatar_kind": "pumpkin", "avatar_ref": f"pumpkin-{i % 8 + 1}"}
+        r = (await http.post("/api/join", json=body)).json()
+        if not r.get("ok"):
+            rep.fail(f"{name}: вход не удался: {r}")
+            continue
+        c = Client(base, "player", r["token"], name)
+        c.pid = r["me"]["id"]
+        expected[c.pid] = 0
+        players.append(c)
+        c.start()
+    ok = await wait_for(lambda: all(p.connected.is_set() for p in players), 10)
+    rep.check(ok and len(players) == n_players, f"{len(players)} игроков вошли и подключились", "не все игроки подключились")
+
+    r = (await http.post("/api/join", json={"name": "игрок 1", "avatar_kind": "pumpkin", "avatar_ref": "pumpkin-8"})).json()
+    rep.check(r.get("code") == "name_taken", "дубль имени отклонён", f"дубль имени принят: {r}")
+    if n_players > 1:
+        r = (await http.post("/api/join", json={"name": "Новенький", "avatar_kind": "pumpkin", "avatar_ref": "pumpkin-1"})).json()
+        rep.check(r.get("code") == "avatar_taken", "занятый аватар отклонён", f"занятый аватар принят: {r}")
+
+    print("Сцены, обрывы связи, правки очков")
+    rnd = random.Random(42)
+    for round_no in range(2):
+        for scene in SCENES:
+            dropped = rnd.sample(players, k=min(2, len(players)))
+            for p in dropped:
+                await p.drop()
+            r = await host.cmd("set_scene", scene=scene, force=True)
+            if not r["ok"]:
+                rep.fail(f"сцена {scene}: {r}")
+                continue
+            target = rnd.choice(players)
+            amount = rnd.choice([-50, 25, 100, 200])
+            r = await host.cmd("adjust_score", player_id=target.pid, amount=amount, note="симулятор")
+            if r["ok"]:
+                expected[target.pid] += amount
+            for p in dropped:
+                p.start()
+            synced = await wait_for(lambda: all(p.scene == scene for p in players) and tv.scene == scene, 5)
+            if not synced:
+                lag = [p.name for p in players if p.scene != scene]
+                rep.fail(f"сцена {scene}: не дошла до {lag or ['ТВ']}")
+        rep.step(f"круг {round_no + 1}: все {len(SCENES)} сцен дошли до ТВ и всех телефонов (с обрывами)")
+    await host.cmd("set_scene", scene="ambient", force=True)
+
+    def scores_ok() -> bool:
+        got = {p["id"]: p["score"] for p in host.snapshot["players"]}
+        return all(got.get(pid) == exp for pid, exp in expected.items())
+
+    rep.check(await wait_for(scores_ok, 5), "очки на /host совпадают с ожидаемыми", "очки на /host расходятся")
+
+    if server is not None:
+        print("Перезапуск сервера посреди сцены")
+        await host.cmd("set_scene", scene="timer")
+        await server.stop()
+        await asyncio.sleep(0.5)
+        for c in [host, tv, *players]:
+            c.connected.clear()
+        await server.start()
+        ok = await wait_for(lambda: all(c.connected.is_set() for c in [host, tv, *players]), 15)
+        rep.check(ok, "после перезапуска все переподключились сами", "не все переподключились после перезапуска")
+        rep.check(all(c.scene == "timer" for c in [tv, *players]), "сцена восстановлена", "сцена потеряна при перезапуске")
+        snap_players = {p["id"]: p for p in host.snapshot["players"]}
+        rep.check(len(snap_players) == n_players, "игроки сохранены", "игроки потеряны при перезапуске")
+        rep.check(await wait_for(scores_ok, 5), "очки сохранены", "очки потеряны при перезапуске")
+        await host.cmd("set_scene", scene="ambient")
+
+    print("Голова-тыква")
+    r = await host.cmd("head_call")
+    if r["ok"]:
+        got = await wait_for(lambda: any(m.get("t") == "head" and m.get("head") for m in tv.messages), 3)
+        rep.check(got, "голова показала факт на ТВ", "факт не дошёл до ТВ")
+    else:
+        rep.step(f"голова: {r.get('error')}")
+
+    if server is not None:
+        rep.check(not server.crashed(), "сервер не упал", "сервер упал")
+    for c in [host, tv, *players]:
+        await c.drop()
+    await http.aclose()
+
+    print("\nОчки по игрокам (ожидаемые = фактические):")
+    for p in players:
+        print(f"  {p.name}: {expected[p.pid]}")
+
+
+async def main_async(args) -> int:
+    rep = Report()
+    server = None
+    base = args.url
+    if not base:
+        server = ServerProc(args.speed)
+        print(f"Поднимаю сервер: {server.url}, данные {server.data}, ускорение x{args.speed}")
+        await server.start()
+        base = server.url
+    try:
+        await scenario_core(base, args.players, rep, server)
+        if args.scenario == "evening":
+            print("\nЕщё не реализовано в приложении, пропущено: " + ", ".join(NOT_YET))
+    finally:
+        if server:
+            await server.stop()
+            server.log.close()
+    print("\n=== Отчёт ===")
+    print(f"Шагов пройдено: {len(rep.steps)}, расхождений: {len(rep.problems)}")
+    for p in rep.problems:
+        print(f"  ✗ {p}")
+    if server and rep.problems:
+        print(f"Журнал сервера: {server.data / 'sim-server.out'}")
+    elif server:
+        shutil.rmtree(server.data, ignore_errors=True)
+    return 1 if rep.problems else 0
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Симулятор вечера «Тыквенный спас»")
+    ap.add_argument("--players", type=int, default=8)
+    ap.add_argument("--speed", type=float, default=30)
+    ap.add_argument("--scenario", choices=["core", "evening"], default="evening")
+    ap.add_argument("--url", help="адрес уже запущенного сервера (иначе поднимается свой)")
+    args = ap.parse_args()
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    os.chdir(ROOT)
+    sys.exit(asyncio.run(main_async(args)))
+
+
+if __name__ == "__main__":
+    main()
