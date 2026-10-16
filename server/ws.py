@@ -266,6 +266,11 @@ HOST_EXTRA: dict[str, Callable] = {
     # игра
     "game_start": _in_scene("game")(lambda hub, c, m: hub.ev.game.start(str(m.get("mode", "scored")))),
     "game_reset": lambda hub, c, m: hub.ev.game.reset(),
+    # охота за семечками
+    "seeds_start": _in_scene("seeds")(lambda hub, c, m: hub.ev.seeds.start()),
+    "seeds_time": lambda hub, c, m: hub.ev.seeds.add_time(m.get("seconds", 60)),
+    "seeds_stop": lambda hub, c, m: hub.ev.seeds.stop(),
+    "seeds_reset": lambda hub, c, m: hub.ev.seeds.reset(),
     # резьба
     "vote_start": _in_scene("carve_vote")(lambda hub, c, m: hub.ev.vote.start()),
     "vote_close": _in_scene("carve_vote")(lambda hub, c, m: hub.ev.vote.close()),
@@ -286,6 +291,7 @@ PLAYER_EXTRA: dict[str, Callable] = {
     "game_progress": lambda hub, c, m: hub.ev.game.progress(c.player_id, m.get("score")),
     "game_result": lambda hub, c, m: hub.ev.game.result(c.player_id, m.get("caught")),
     "vote": lambda hub, c, m: hub.ev.vote.vote(c.player_id, m.get("n")),
+    "seeds_enter": lambda hub, c, m: hub.ev.seeds.enter(c.player_id, m.get("code")),
 }
 
 

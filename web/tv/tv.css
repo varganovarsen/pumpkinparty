@@ -167,3 +167,36 @@ body { font-size: 2.2vh; }
 .reveal-place { font-size: 7vh; font-weight: 800; color: var(--accent-2); }
 .reveal-bonus { font-size: 6vh; font-weight: 800; color: var(--ok); }
 .hidden { display: none !important; }
+
+/* охота за семечками */
+.seeds-top { display: flex; align-items: center; gap: 4vw; }
+.seeds-time.warn { color: var(--fail); }
+.seeds-counts { display: flex; gap: 1.5vw; font-size: 4vh; }
+.seeds-counts .qt-chip { padding: .8vh 1.6vw; }
+.seeds-counts .qt-chip.golden { background: #fad23233; }
+.seeds-counts .qt-chip.rainbow { background: linear-gradient(115deg, #ff4d4d55, #ffe14d55, #5ce65c55, #4dc3ff55, #c44dff55); }
+.seeds-cols { display: flex; gap: 3vw; width: 100%; justify-content: center; min-height: 0; flex: 1; }
+.seeds-board { flex: 0 1 50vw; overflow: hidden; }
+.seeds-feed { flex: 0 1 36vw; overflow: hidden; }
+.seeds-kinds { font-size: 2.8vh; color: var(--muted); white-space: nowrap; }
+.seeds-find.golden b { color: #fad232; }
+.seeds-find.rainbow { background: linear-gradient(90deg, #ff4d4d33, #ffe14d33, #5ce65c33, #4dc3ff33, #c44dff33); }
+.seeds-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.seeds-announce { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 2vw;
+  padding: 3vh 3vw; border-radius: 3vh; background: #1d120cee; border: .5vh solid var(--accent); font-size: 5vh; font-weight: 800;
+  box-shadow: 0 2vh 8vh #000c; animation: seeds-ann 3s ease-out forwards; }
+.seeds-announce .qt-av { width: 12vh; height: 12vh; }
+.seeds-announce .who { color: var(--accent-2); }
+.seeds-announce b { font-size: 9vh; color: var(--accent-2); margin-left: 2vw; }
+.seeds-announce.golden { border-color: #fad232; }
+.seeds-announce.golden b { color: #fad232; }
+.seeds-announce.rainbow { inset: 0; left: 0; top: 0; transform: none; border: 0; border-radius: 0; justify-content: center; font-size: 8vh;
+  background: linear-gradient(115deg, #ff4d4de6, #ffa64de6, #ffe14de6, #5ce65ce6, #4dc3ffe6, #6b6bffe6, #c44dffe6);
+  background-size: 300% 300%; animation: seeds-rainbow 6s ease-in-out forwards; text-shadow: 0 .5vh 2vh #000; }
+.seeds-announce.rainbow .qt-av { width: 24vh; height: 24vh; }
+.seeds-announce.rainbow b { color: #fff; font-size: 14vh; }
+@keyframes seeds-ann { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.6); } 10% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  18% { transform: translate(-50%, -50%) scale(1); } 85% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes seeds-rainbow { 0% { opacity: 0; background-position: 0% 50%; } 8% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; background-position: 100% 50%; } }
+.seeds-announce .seed-ic.big { font-size: 10vh; }
+.seeds-announce.rainbow .seed-ic.big { font-size: 18vh; }

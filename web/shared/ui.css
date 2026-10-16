@@ -90,3 +90,9 @@ input[type=text], input[type=number], select, textarea {
 .status-warn { color: var(--warn); }
 .status-fail { color: var(--fail); }
 .status-info { color: var(--muted); }
+
+/* тыквенная семечка (охота за семечками) */
+.seed-ic { display: inline-block; width: 1.5em; height: .95em; vertical-align: -.1em; border-radius: 62% 38% 38% 62% / 50% 50% 50% 50%;
+  border: .08em solid #a88a4c; background: radial-gradient(ellipse at 35% 40%, #fffaf0, #efdcae 70%, #d9bf82); }
+.seed-ic.golden { border-color: #a27a00; background: radial-gradient(ellipse at 35% 40%, #fff7c2, #f5cd2e 65%, #c99400); box-shadow: 0 0 .3em #fad23288; }
+.seed-ic.rainbow { border-color: #fff; background: linear-gradient(115deg, #ff4d4d, #ffa64d, #ffe14d, #5ce65c, #4dc3ff, #6b6bff, #c44dff); box-shadow: 0 0 .4em #fff8; }

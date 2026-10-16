@@ -1,0 +1,11 @@
+# Семечки для охоты (модуль 09). Сгенерировано tools/make_seeds.py, можно править руками.
+# code  — цифры в кавычках (уникальные, одной длины); kind — regular | golden | rainbow (одна);
+# place — где спрятана: видно только ведущему (/host и шпаргалка при печати).
+# Очки за виды — в config.yaml, раздел seeds.
+- {code: "2201", kind: regular, place: ""}
+- {code: "9325", kind: regular, place: ""}
+- {code: "1033", kind: regular, place: ""}
+- {code: "4179", kind: regular, place: ""}
+- {code: "1931", kind: golden, place: ""}
+- {code: "8117", kind: golden, place: ""}
+- {code: "7364", kind: rainbow, place: ""}

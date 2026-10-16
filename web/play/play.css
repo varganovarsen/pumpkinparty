@@ -101,3 +101,28 @@ a.btn { display: inline-block; text-decoration: none; color: var(--text); }
 .viewer { position: fixed; inset: 0; z-index: 50; background: #000e; display: flex; flex-direction: column; justify-content: center; padding: 12px; gap: 10px; }
 .viewer img { max-width: 100%; max-height: 75dvh; object-fit: contain; margin: 0 auto; -webkit-touch-callout: default; }
 .viewer-bar { color: #fff; }
+
+/* охота за семечками */
+.seeds { position: relative; padding: 8px 0 20px; }
+.seeds-hud { display: flex; justify-content: space-between; font-weight: 800; font-size: 1.15rem; padding: 6px 2px; }
+.seeds-rules { background: var(--panel-2); border-radius: 12px; padding: 4px 14px; margin: 14px 0; }
+.seeds-slots { display: flex; justify-content: center; gap: 10px; margin: 12px 0 6px; }
+.seeds-slots .slot { width: 56px; height: 68px; border-radius: 12px; border: 2px solid var(--line); background: var(--panel); display: grid; place-items: center; font: 800 2.2rem/1 ui-monospace, monospace; }
+.seeds-slots .slot.on { border-color: var(--accent); }
+.seeds-slots.busy { opacity: .5; }
+.seeds-slots.shake { animation: seeds-shake .35s; }
+@keyframes seeds-shake { 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+.seeds-msg { min-height: 1.6em; text-align: center; font-weight: 700; }
+.seeds-msg.err { color: #ff8a7a; }
+.seeds-msg.ok { color: var(--accent-2); }
+.seeds-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+.seeds-pad button { min-height: 66px; font-size: 1.8rem; font-weight: 800; }
+.seeds-pad button.fn { font-size: 1.3rem; background: var(--panel-2); }
+.seeds-pad.locked { opacity: .35; pointer-events: none; }
+.seed-pop { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 1.6rem; font-weight: 800; background: rgba(0,0,0,.72); animation: seed-pop 1.8s ease-out forwards; pointer-events: none; }
+.seed-pop .ic { font-size: 5rem; line-height: 1; }
+.seed-pop b { font-size: 3rem; color: var(--accent-2); }
+.seed-pop.golden b { color: #fad232; }
+.seed-pop.rainbow { animation-duration: 3.5s; background: linear-gradient(115deg, #ff4d4dcc, #ffa64dcc, #ffe14dcc, #5ce65ccc, #4dc3ffcc, #6b6bffcc, #c44dffcc); text-shadow: 0 2px 8px #000; }
+.seed-pop.rainbow b { color: #fff; font-size: 4rem; }
+@keyframes seed-pop { 0% { opacity: 0; transform: scale(.6); } 12% { opacity: 1; transform: scale(1.05); } 20% { transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }

@@ -1,5 +1,5 @@
 // Разделы текущей сцены на /host (модули 03-07). Каждый раздел: {el, update(S)}.
-import { el, clear, toast, fmtClock } from '/web/shared/util.js';
+import { el, clear, toast, fmtClock, seedIcon } from '/web/shared/util.js';
 
 function nextButton(S, run) {
   const n = S.nextStep;
@@ -47,6 +47,57 @@ export function gamePanel(run) {
         el('button', { class: 'grow', disabled: live, onclick: () => run('game_start', { mode: 'practice' }) }, 'Тренировка (15 с)'),
         el('button', { class: 'grow primary', disabled: live || g.scored_done, onclick: () => run('game_start', { mode: 'scored' }) }, 'Старт зачёта (45 с)')));
       root.append(el('p', { class: 'muted' }, 'Играют те, кто в сети в момент старта. Сброс игры — в аварийном разделе.'));
+    },
+  };
+}
+
+// ---------------------------------------------------------------- охота за семечками
+export function seedsPanel(run) {
+  const root = el('div');
+  const KIND = { regular: 'обычн.', golden: 'золот.', rainbow: 'радужн.' };
+  let link = null;
+  let last = null;
+  let codesOpen = false;
+  const time = el('b', { class: 'grow' });
+  setInterval(() => {
+    if (!last || !link) return;
+    const now = link.serverNow();
+    if (last.phase === 'countdown') time.textContent = `Отсчёт: ${fmtClock(last.start_at_ms - now)}`;
+    else if (last.phase === 'running') time.textContent = `Идёт, осталось ${fmtClock(last.end_at_ms - now)}`;
+  }, 500);
+  return {
+    el: root,
+    setLink(l) { link = l; },
+    update(S) {
+      const s = S.seeds || {};
+      last = s;
+      const live = s.phase === 'countdown' || s.phase === 'running';
+      time.textContent = { idle: 'Охота не начата', finished: 'Охота окончена' }[s.phase] || time.textContent || '…';
+      const counts = Object.entries(s.counts || {}).filter(([, c]) => c.total)
+        .map(([k, c]) => `${KIND[k]} ${c.found}/${c.total}`).join(' · ');
+      const list = el('div', { class: 'qh-list' });
+      for (const r of s.board || []) list.append(el('div', {}, `${r.name}: ${r.count} шт., +${r.points}`));
+      const table = el('table', { class: 'seeds-codes' });
+      for (const x of s.seeds || []) {
+        table.append(el('tr', { class: x.found_by ? 'found' : '' }, el('td', {}, seedIcon(x.kind)), el('td', { class: 'code' }, x.code),
+          el('td', {}, x.place || ''), el('td', {}, x.found_by || '')));
+      }
+      const details = el('details', { open: codesOpen }, el('summary', {}, `Коды и где спрятаны (${(s.seeds || []).length})`), table);
+      details.addEventListener('toggle', () => { codesOpen = details.open; });
+      clear(root).append(
+        el('div', { class: 'row' }, time, el('span', {}, counts)),
+        list,
+        el('div', { class: 'row', style: { marginTop: '8px' } },
+          el('button', { class: 'grow primary', disabled: s.phase !== 'idle', onclick: () => run('seeds_start', {}, 'Охота началась') },
+            `Старт (${s.minutes ?? 5} мин)`),
+          el('button', { class: 'grow', disabled: !live, onclick: () => run('seeds_time', { seconds: 60 }, '+1 минута') }, '+1 мин'),
+          el('button', { class: 'grow', disabled: !live, onclick: () => run('seeds_time', { seconds: -60 }, '−1 минута') }, '−1 мин')),
+        el('button', { style: { width: '100%', marginTop: '8px' }, disabled: !live,
+          onclick: () => { if (confirm('Закончить охоту досрочно?')) run('seeds_stop', {}, 'Охота окончена'); } }, 'Закончить сейчас'),
+        el('a', { class: 'btn', href: '/seeds/print', target: '_blank', style: { display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '8px', textDecoration: 'none', color: 'inherit' } },
+          '🖨 Лист семечек для печати'),
+        details,
+        el('p', { class: 'muted' }, 'Коды — в content/seeds.yaml (новые: python tools/make_seeds.py --force). Сброс охоты — в аварийном разделе.'));
     },
   };
 }

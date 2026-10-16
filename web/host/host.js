@@ -2,10 +2,10 @@
 import { Link } from '/web/shared/ws.js';
 import { el, clear, toast, api, fmtTime, offlineBar } from '/web/shared/util.js';
 import { quizPanel } from '/web/host/quiz.js';
-import { ambientPanel, gamePanel, votePanel, timerPanel, ratingPanel, slideshowPanel, finalPhotoPanel, photosSection } from '/web/host/panels.js';
+import { ambientPanel, gamePanel, seedsPanel, votePanel, timerPanel, ratingPanel, slideshowPanel, finalPhotoPanel, photosSection } from '/web/host/panels.js';
 
-const S = { scene: null, scenes: [], settings: {}, players: [], log: [], nextStep: null, joinUrl: '', tvCount: null, logFilter: '', quiz: null, game: null, vote: null, timer: null, finale: null, head: null };
-const MODULES = ['quiz', 'game', 'vote', 'timer', 'finale'];
+const S = { scene: null, scenes: [], settings: {}, players: [], log: [], nextStep: null, joinUrl: '', tvCount: null, logFilter: '', quiz: null, game: null, seeds: null, vote: null, timer: null, finale: null, head: null };
+const MODULES = ['quiz', 'game', 'seeds', 'vote', 'timer', 'finale'];
 const $ = (id) => document.getElementById(id);
 const evening = $('evening');
 const checkMain = $('check');
@@ -43,6 +43,7 @@ evening.append(
       el('button', { class: 'grow', onclick: () => run('reload_scene', {}, 'Сцена на ТВ перезагружена') }, 'Перезагрузить сцену'),
       el('button', { class: 'grow', onclick: () => run('skip_question', {}, 'Вопрос пропущен') }, 'Пропустить вопрос')),
     el('button', { style: { width: '100%', marginTop: '8px' }, onclick: () => { if (confirm('Сбросить игру? Очки за игру будут удалены, зачёт можно сыграть заново.')) run('game_reset', {}, 'Игра сброшена'); } }, 'Сбросить игру с падающими тыквами'),
+    el('button', { style: { width: '100%', marginTop: '8px' }, onclick: () => { if (confirm('Сбросить охоту за семечками? Очки за семечки удалятся, охоту можно провести заново.')) run('seeds_reset', {}, 'Охота сброшена'); } }, 'Сбросить охоту за семечками'),
     el('button', { style: { width: '100%', marginTop: '8px' }, onclick: () => { if (confirm('Сбросить голосование за резьбу? Бонусы резьбы удалятся, тыквы снова можно менять, голосование — открыть заново.')) run('vote_reset', {}, 'Голосование сброшено'); } }, 'Сбросить голосование за резьбу'),
     el('h3', { style: { marginTop: '14px' } }, 'Исправить очки игрока'),
     box.adjPlayer, el('div', { style: { height: '6px' } }), adjAmount, el('div', { style: { height: '6px' } }), adjNote,
@@ -278,10 +279,11 @@ function onMessage(m) {
       break;
     case 'scene': S.scene = m; renderHeader(); renderScenes(); break;
     case 'next_step': S.nextStep = m.next_step; renderNext(); break;
-    case 'quiz': case 'game': case 'vote': case 'timer': case 'finale':
+    case 'quiz': case 'game': case 'seeds': case 'vote': case 'timer': case 'finale':
       S[m.t] = m[m.t];
       refreshPanel();
       break;
+    case 'seed_found': break; // журнал и состояние приходят отдельно
     case 'game_live': if (S.game) { S.game.board = m.board; refreshPanel(); } break;
     case 'head': S.head = m.head; refreshPanel(); break;
     case 'photo_added': case 'photo_changed': photos.reload(); break;
@@ -309,8 +311,10 @@ const quiz = quizPanel(link, run);
 const timer = timerPanel(run);
 timer.setLink(link);
 const vote = votePanel(run);
+const seeds = seedsPanel(run);
+seeds.setLink(link);
 const panels = {
-  ambient: ambientPanel(run), game: gamePanel(run), carve_vote: vote, carve_reveal: vote, timer,
+  ambient: ambientPanel(run), game: gamePanel(run), seeds, carve_vote: vote, carve_reveal: vote, timer,
   rating_reveal: ratingPanel(run), slideshow: slideshowPanel(run, (s) => setScene(s)), final_photo: finalPhotoPanel(),
 };
 const photos = photosSection(run);

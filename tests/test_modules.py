@@ -2,10 +2,12 @@ import io
 import json
 import zipfile
 
+import pytest
 from PIL import Image
 
 from conftest import ROOT, cmd, make_client, recv, recv_until
 from server.game import MIN_GOOD_GAP, PLANS, generate, score_of
+from server.state import CmdError
 
 CONTENT = ROOT / "tests" / "fixtures" / "content"
 POINTS = {"regular": 10, "golden": 50, "rotten": -30}
@@ -414,3 +416,75 @@ def png_bytes(size):
     buf = io.BytesIO()
     Image.new("L", (size, size), 0).save(buf, "PNG")
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------------- охота за семечками
+def test_seeds_first_finder_wins_and_scores(data_dir):
+    with client(data_dir, tv_localhost_only=False) as c:
+        ev = c.app.state.ev
+        a, b = join(c, "Аня", "pumpkin-1"), join(c, "Боря", "pumpkin-2")
+        host = ev.join("Ведущий", "pumpkin", "pumpkin-3", as_host=True)
+        with c.websocket_connect("/ws?role=host") as h, \
+                c.websocket_connect(f"/ws?role=player&token={a['token']}") as wa, \
+                c.websocket_connect(f"/ws?role=player&token={b['token']}") as wb:
+            recv_until(h, "snapshot")
+            recv_until(wa, "snapshot")
+            recv_until(wb, "snapshot")
+            assert cmd(h, "seeds_start")["code"] == "wrong_scene"
+            assert cmd(h, "set_scene", scene="seeds")["ok"]
+            assert cmd(h, "seeds_start")["ok"]
+            assert cmd(wa, "seeds_enter", code="2201")["code"] == "not_started"
+            ev.seeds.st["start_at"] = ev.clock.now() - 1
+            ev.seeds.tick()
+            assert ev.seeds.phase == "running"
+            r = cmd(wa, "seeds_enter", code="22 01")
+            assert r["ok"] and r["kind"] == "regular" and r["points"] == 30
+            r = cmd(wb, "seeds_enter", code="2201")
+            assert r["code"] == "taken" and "Аня" in r["error"]
+            assert cmd(wa, "seeds_enter", code="2201")["code"] == "mine"
+            assert cmd(wb, "seeds_enter", code="7364")["points"] == 300  # радужная
+            with pytest.raises(CmdError) as e:
+                ev.seeds.enter(host.id, "9325")
+            assert e.value.code == "host"
+        assert ev.breakdown(a["me"]["id"])["seeds"] == 30
+        assert ev.breakdown(b["me"]["id"])["seeds"] == 300
+        board = ev.seeds.board()
+        assert [r["name"] for r in board] == ["Боря", "Аня"]
+        assert ev.seeds.counts()["rainbow"] == {"total": 1, "found": 1}
+        grp = [r for g in ev.finale.build_groups() for r in g]
+        assert next(r for r in grp if r["name"] == "Боря")["breakdown"]["seeds"] == 300
+
+
+def test_seeds_wrong_codes_cooldown_and_finish(data_dir):
+    with client(data_dir, tv_localhost_only=False) as c:
+        ev = c.app.state.ev
+        a = join(c, "Аня", "pumpkin-1")
+        ev.set_scene("seeds")
+        ev.seeds.start()
+        ev.seeds.st["start_at"] = ev.clock.now() - 1
+        ev.seeds.tick()
+        for _ in range(2):
+            with pytest.raises(CmdError) as e:
+                ev.seeds.enter(a["me"]["id"], "0000")
+            assert e.value.code == "wrong" and "until_ms" not in e.value.extra
+        with pytest.raises(CmdError) as e:
+            ev.seeds.enter(a["me"]["id"], "0000")
+        assert e.value.extra["until_ms"] > ev.clock.now() * 1000
+        with pytest.raises(CmdError) as e:
+            ev.seeds.enter(a["me"]["id"], "2201")  # даже верный код ждёт конца паузы
+        assert e.value.code == "cooldown"
+        assert ev.seeds.public("player", a["me"]["id"])["my"]["cooldown_until_ms"]
+        ev.seeds.st["fails"][str(a["me"]["id"])]["until"] = 0
+        assert ev.seeds.enter(a["me"]["id"], "2201")["points"] == 30
+        assert ev.scene_is_live("seeds")
+        ev.seeds.st["end_at"] = ev.clock.now() - 1
+        ev.seeds.tick()
+        assert ev.seeds.phase == "finished" and not ev.scene_is_live("seeds")
+        with pytest.raises(CmdError):
+            ev.seeds.enter(a["me"]["id"], "9325")
+        with pytest.raises(CmdError):
+            ev.seeds.start()  # второй раз нельзя, только через сброс
+        ev.seeds.reset()
+        assert ev.seeds.phase == "idle" and "seeds" not in ev.breakdown(a["me"]["id"])
+        page = c.get("/seeds/print").text
+        assert "7364" in page and "Шпаргалка" in page

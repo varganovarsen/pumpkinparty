@@ -54,3 +54,7 @@ details > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 .ph-meta { margin: 4px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ph-cell .row { gap: 4px; flex-wrap: nowrap; }
 .final-preview { width: 100%; border-radius: 8px; margin: 8px 0; }
+.seeds-codes { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: .9rem; }
+.seeds-codes td { padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.seeds-codes td.code { font-family: ui-monospace, monospace; font-weight: 700; }
+.seeds-codes tr.found { opacity: .45; }

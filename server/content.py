@@ -38,6 +38,7 @@ class Content:
         self.dir = content_dir
         self._facts = YamlFile(self.dir / "facts.yaml", [])
         self._quiz = YamlFile(self.dir / "quiz.yaml", {})
+        self._seeds = YamlFile(self.dir / "seeds.yaml", [])
 
     def facts(self) -> list[dict]:
         data = self._facts.get()
@@ -52,3 +53,20 @@ class Content:
     def quiz(self) -> dict:
         data = self._quiz.get()
         return data if isinstance(data, dict) else {}
+
+    def seeds(self) -> list[dict]:
+        """Семечки для охоты: [{code, kind, place}]; код — строка цифр, kind — regular|golden|rainbow."""
+        data = self._seeds.get()
+        if not isinstance(data, list):
+            return []
+        out, seen = [], set()
+        for s in data:
+            if not isinstance(s, dict):
+                continue
+            code = "".join(ch for ch in str(s.get("code", "")) if ch.isdigit())
+            kind = s.get("kind", "regular")
+            if not code or code in seen or kind not in ("regular", "golden", "rainbow"):
+                continue
+            seen.add(code)
+            out.append({"code": code, "kind": kind, "place": str(s.get("place") or "")})
+        return out

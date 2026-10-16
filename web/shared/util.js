@@ -77,3 +77,8 @@ export function offlineBar(online) {
   if (!b) { b = el('div', { id: 'offline-bar', class: 'offline-bar' }, 'Нет связи — переподключаемся…'); document.body.append(b); }
   b.classList.toggle('show', !online);
 }
+
+// Тыквенная семечка (CSS, как на листе для печати): kind — regular | golden | rainbow.
+export function seedIcon(kind = 'regular', cls = '') {
+  return el('i', { class: `seed-ic ${kind} ${cls}`.trim(), 'aria-hidden': 'true' });
+}

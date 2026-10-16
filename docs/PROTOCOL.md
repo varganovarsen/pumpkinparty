@@ -52,9 +52,9 @@
 
 | Роль | Дополнительно |
 |---|---|
-| player | `me`, `facts`, `facts_locked`, `avatars_taken`, `quiz/game/vote/timer/finale` (вид игрока) |
-| tv | `players`, `head`, `stubs` (список путей-заглушек), `client_config`, `quiz/game/vote/timer/finale` |
-| host | `players`, `log` (50 строк), `scenes`, `next_step`, `tv_count`, `head`, `quiz/game/vote/timer/finale` (полный вид) |
+| player | `me`, `facts`, `facts_locked`, `avatars_taken`, `quiz/game/seeds/vote/timer/finale` (вид игрока) |
+| tv | `players`, `head`, `stubs` (список путей-заглушек), `client_config`, `quiz/game/seeds/vote/timer/finale` |
+| host | `players`, `log` (50 строк), `scenes`, `next_step`, `tv_count`, `head`, `quiz/game/seeds/vote/timer/finale` (полный вид) |
 | carve | `players` (без очков, с `pumpkin_version`: 0 — тыквы нет) |
 
 `scene = {scene, payload, started_at, participating, title}`.
@@ -103,8 +103,9 @@
 | `me` | конкретный player | `me` |
 | `avatars_taken` | player | `taken` |
 | `facts` | player | `facts`, `locked` |
-| `quiz`, `game`, `vote`, `timer`, `finale` | tv, host, каждый player | состояние модуля для роли (см. ниже) |
+| `quiz`, `game`, `seeds`, `vote`, `timer`, `finale` | tv, host, каждый player | состояние модуля для роли (см. ниже) |
 | `game_live` | tv, host | `board` — живой рейтинг игры, не чаще раза в секунду |
+| `seed_found` | tv, host | `name, avatar_url, kind, points` — плашка находки на ТВ |
 | `photo_added` | tv, host, player | `photo` |
 | `photo_changed` | tv, host, player | `id, hidden?, deleted?` |
 | `shot` | tv | случайный кадр: `stage: countdown\|taken\|failed`, `seconds`, `photo` |
@@ -141,10 +142,12 @@
 | host | `photo_hide` | `id, hidden` |
 | host | `photo_delete` | `id` → файлы в `data/_deleted/` |
 | host | `game_start` | `mode: practice\|scored` (сцена `game`); `game_reset` — аварийный сброс очков игры |
+| host | `seeds_start` (сцена `seeds`), `seeds_time {seconds}` (±, во время охоты), `seeds_stop`, `seeds_reset` (аварийно) | — |
 | host | `vote_start`, `vote_close` (сцена `carve_vote`), `vote_reveal` (сцена `carve_reveal`), `vote_reset` (аварийно) | — |
 | host | `timer_set` | `minutes, label?`; `timer_pause {paused}`, `timer_add {seconds}`, `timer_label {label}` |
 | host | `rating_next`, `rating_restart` (сцена `rating_reveal`), `slideshow_pause {paused}` | — |
 | player | `game_progress` | `score` — живой счёт; `game_result {caught: [i…]}` → `{score}` (сервер пересчитывает по расписанию) |
+| player | `seeds_enter` | `code` → `{kind, points}`; ошибки `wrong` (+`until_ms` при паузе), `cooldown {until_ms}`, `taken`, `mine`, `host`, `not_started`, `closed` |
 | player | `vote` | `n` (номер тыквы) или `null` — воздержаться; свою нельзя (`own`) |
 | player | `quiz_answer` | `qid, choice (0-3)` или `qid, text` → ошибки `closed`, `late`, `already`, `bad_answer` |
 | все | `snapshot` | — (прислать снимок заново) |
@@ -156,6 +159,13 @@
 `t` — появление (с от старта), `land = t + fall` — пересечение линии корзины. `my = {eligible, result}`.
 Результат принимается до конца игры + 5 с; кто не прислал — 0.
 
+### Охота за семечками (`seeds`)
+
+`{phase: idle|countdown|running|finished, start_at_ms, end_at_ms, minutes, points: {regular, golden, rainbow}, code_len,
+counts: {kind: {total, found}}, board: [{player_id, name, avatar_url, in_scoring, count, points, kinds}], feed: [{player_id, name, avatar_url, kind, points, ts}]}`.
+Игроку: `my = {can_play, count, points, kinds, cooldown_until_ms}`. Ведущему: `seeds: [{code, kind, place, found_by}]`, `next`.
+Страница `GET /seeds/print` — лист для печати (коды видны, ссылка только в `/host`).
+
 ### Голосование и итоги резьбы (`vote`)
 
 `{phase: idle|open|closed, entries: [{n, shots: {lit, dark, side}, masks? (tv/host)}], voted_count, voters_total,
@@ -165,5 +175,5 @@ reveal_step, revealed}`. Игроку: `my = {own, vote, abstained}`. После
 ### Таймер (`timer`) и финал (`finale`)
 
 `timer = {label, running, finished, end_at_ms, left_ms}` (`left_ms` — на паузе).
-`finale = {step, groups_total, groups: [[{player_id, name, avatar_url, total, place, breakdown: {quiz, game, carve, manual}}]],
+`finale = {step, groups_total, groups: [[{player_id, name, avatar_url, total, place, breakdown: {quiz, game, seeds, carve, manual}}]],
 slideshow_paused, final_photo}`: группы от последнего места к первому, ничьи в одной группе; не ведущему — только раскрытые.

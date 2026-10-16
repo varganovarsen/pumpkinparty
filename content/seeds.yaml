@@ -1,0 +1,30 @@
+# Семечки для охоты (модуль 09). Сгенерировано tools/make_seeds.py, можно править руками.
+# code  — цифры в кавычках (уникальные, одной длины); kind — regular | golden | rainbow (одна);
+# place — где спрятана: видно только ведущему (/host и шпаргалка при печати).
+# Очки за виды — в config.yaml, раздел seeds.
+- {code: "7280", kind: regular, place: ""}
+- {code: "1440", kind: regular, place: ""}
+- {code: "7957", kind: regular, place: ""}
+- {code: "8703", kind: regular, place: ""}
+- {code: "5026", kind: regular, place: ""}
+- {code: "6427", kind: regular, place: ""}
+- {code: "7251", kind: regular, place: ""}
+- {code: "3506", kind: regular, place: ""}
+- {code: "6762", kind: regular, place: ""}
+- {code: "4194", kind: regular, place: ""}
+- {code: "6915", kind: regular, place: ""}
+- {code: "2321", kind: regular, place: ""}
+- {code: "1408", kind: regular, place: ""}
+- {code: "7736", kind: regular, place: ""}
+- {code: "5400", kind: regular, place: ""}
+- {code: "6803", kind: regular, place: ""}
+- {code: "5267", kind: regular, place: ""}
+- {code: "2625", kind: regular, place: ""}
+- {code: "2647", kind: regular, place: ""}
+- {code: "8017", kind: regular, place: ""}
+- {code: "7355", kind: golden, place: ""}
+- {code: "4773", kind: golden, place: ""}
+- {code: "9486", kind: golden, place: ""}
+- {code: "8091", kind: golden, place: ""}
+- {code: "8327", kind: golden, place: ""}
+- {code: "0170", kind: rainbow, place: ""}

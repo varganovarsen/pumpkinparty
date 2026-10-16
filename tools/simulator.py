@@ -10,7 +10,7 @@
   core     — вход, профили, переключение всех сцен, обрывы и возвраты, ручные правки очков,
              перезапуск сервера, сверка очков.
   evening  — весь вечер: core + квиз (4 раунда на тестовом контенте tests/fixtures/content,
-             перезапуск посреди вопроса) + игра (тренировка и зачёт, обрыв посреди игры) + резьба
+             перезапуск посреди вопроса) + игра (тренировка и зачёт, обрыв посреди игры) + охота за семечками + резьба
              (тыквы, голосование, итоги) + таймер + общий рейтинг + финальное фото + скачивание.
              Итоговые очки сверяются до единицы.
 """
@@ -34,7 +34,7 @@ import httpx
 import websockets
 
 ROOT = Path(__file__).resolve().parent.parent
-SCENES = ["ambient", "quiz", "game", "timer", "carve_vote", "carve_reveal",
+SCENES = ["ambient", "quiz", "game", "seeds", "timer", "carve_vote", "carve_reveal",
           "rating_reveal", "final_photo", "slideshow", "download"]
 TEST_CONTENT = ROOT / "tests" / "fixtures" / "content"
 
@@ -122,7 +122,7 @@ class Client:
         self.next_id = 1
         self.connected = asyncio.Event()
         self.quiz: dict | None = None
-        self.state: dict = {}  # последние состояния модулей: game, vote, timer, finale
+        self.state: dict = {}  # последние состояния модулей: game, seeds, vote, timer, finale
         self.reconnects = 0
         self.want = True
 
@@ -164,9 +164,9 @@ class Client:
             self.snapshot = m
             self.scene = m["scene"]["scene"]
             self.quiz = m.get("quiz")
-            self.state.update({k: m[k] for k in ("game", "vote", "timer", "finale") if k in m})
+            self.state.update({k: m[k] for k in ("game", "seeds", "vote", "timer", "finale") if k in m})
             self.connected.set()
-        elif t in ("game", "vote", "timer", "finale"):
+        elif t in ("game", "seeds", "vote", "timer", "finale"):
             self.state[t] = m[t]
         elif t == "quiz":
             self.quiz = m["quiz"]
@@ -553,6 +553,35 @@ async def scenario_finale(base: str, roster: list, host_player: tuple, expected:
             rep.check(r["ok"], f"игра ({mode}): результат после обрыва принят", f"результат после обрыва не принят: {r}")
         ok = await wait_for(lambda: (module(host, "game") or {}).get("phase") == "finished", 15)
         rep.check(ok, f"игра ({mode}) закончилась", f"игра ({mode}) не закончилась")
+
+    print("Охота за семечками")
+    await host.cmd("set_scene", scene="seeds", force=True)
+    r = await host.cmd("seeds_start")
+    rep.check(r["ok"], "охота началась", f"охота не стартовала: {r}")
+    await wait_for(lambda: (module(host, "seeds") or {}).get("phase") == "running", 10)
+    codes = [s["code"] for s in (module(host, "seeds") or {}).get("seeds", [])]
+    seekers = clients[1:]  # clients[0] — ведущий, он прятал
+    r = await clients[0].cmd("seeds_enter", code=codes[0])
+    rep.check(r.get("code") == "host", "ведущему искать нельзя", f"ведущий смог ввести код: {r}")
+    for c in seekers[:2]:
+        r = await c.cmd("seeds_enter", code="0000")
+        if r.get("code") != "wrong":
+            rep.fail(f"неверный код не отклонён: {r}")
+    winners: dict[str, list] = {}
+
+    async def hunt(c):
+        for code in rnd.sample(codes, len(codes)):
+            r = await c.cmd("seeds_enter", code=code)
+            if r["ok"]:
+                winners.setdefault(code, []).append(c.name)
+                expected[c.pid] += r["points"]
+            elif r.get("code") not in ("taken", "closed"):
+                rep.fail(f"{c.name}: код {code} — {r}")
+    await asyncio.gather(*(hunt(c) for c in seekers))
+    rep.check(sorted(winners) == sorted(codes) and all(len(w) == 1 for w in winners.values()),
+              f"все {len(codes)} семечек засчитаны ровно одному игроку", f"семечки засчитаны неверно: {winners}")
+    ok = await wait_for(lambda: (module(host, "seeds") or {}).get("phase") == "finished", 10)
+    rep.check(ok, "охота закончилась сама, когда нашли все", "охота не закончилась")
 
     print("Резьба: тыквы, голосование, итоги")
     with_pumpkin = clients[0:6]  # шестеро сохранили тыквы, включая ведущего вне зачёта

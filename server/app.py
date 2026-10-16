@@ -13,11 +13,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import assets, carve, images, qr, webcam
+from . import assets, carve, images, qr, seeds_print, webcam
 from .backup import make_backup
 from .checks import INFO, OK, FAIL, WARN, static_checks
 from .clock import Clock
@@ -164,6 +164,12 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/tools/lipsync-preview")
     async def lipsync_page():
         return page("tools/lipsync-preview.html")
+
+    @app.get("/seeds/print")
+    async def seeds_print_page():
+        """Лист семечек для печати; ссылка только в /host (коды видны, гостям не показывать)."""
+        return HTMLResponse(seeds_print.render(content.seeds(), cfg["seeds"]["points"]),
+                            headers={"Cache-Control": "no-store"})
 
     # ------------------------------------------------------------------ статика
     app.mount("/web", StaticFiles(directory=WEB), name="web")

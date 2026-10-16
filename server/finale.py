@@ -108,7 +108,7 @@ class Finale:
             rows.append({
                 "player_id": p.id, "name": p.name, "avatar_url": p.avatar_url, "total": totals.get(p.id, 0),
                 "breakdown": {"quiz": b.get("quiz", 0) + b.get("quiz_bonus", 0), "game": b.get("game", 0),
-                              "carve": b.get("carve", 0), "manual": b.get("manual", 0)},
+                              "seeds": b.get("seeds", 0), "carve": b.get("carve", 0), "manual": b.get("manual", 0)},
             })
         groups: dict[int, list] = {}
         for r in rows:

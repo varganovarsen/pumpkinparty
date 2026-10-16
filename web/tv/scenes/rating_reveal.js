@@ -1,7 +1,7 @@
 // Общий рейтинг (модуль 07): по одному от последнего места к первому, ничьи — вместе.
 import { el, clear } from '/web/shared/util.js';
 
-const CATS = [['quiz', 'Квиз'], ['game', 'Игра'], ['carve', 'Резьба'], ['manual', 'Прочее']];
+const CATS = [['quiz', 'Квиз'], ['game', 'Игра'], ['seeds', 'Семечки'], ['carve', 'Резьба'], ['manual', 'Прочее']];
 
 export function mount(root, ctx) {
   const box = el('div', { class: 'tv-scene rating-tv' });

@@ -153,9 +153,53 @@ def check_quiz(content_dir: Path, errors: list[str], warnings: list[str]) -> Non
             errors.append(f"{rw}: картинки сортов повторяются")
 
 
+SEED_KINDS = ("regular", "golden", "rainbow")
+
+
+def check_seeds(content_dir: Path, errors: list[str], warnings: list[str]) -> None:
+    path = content_dir / "seeds.yaml"
+    if not path.exists():
+        warnings.append("seeds.yaml: нет файла, охота за семечками недоступна (python tools/make_seeds.py)")
+        return
+    data = _load(path, errors)
+    if data is None:
+        return
+    if not isinstance(data, list):
+        errors.append("seeds.yaml: ожидается список семечек")
+        return
+    seen: set[str] = set()
+    kinds = {k: 0 for k in SEED_KINDS}
+    lengths: set[int] = set()
+    for i, s in enumerate(data, 1):
+        where = f"seeds.yaml, семечка {i}"
+        if not isinstance(s, dict):
+            errors.append(f"{where}: ожидается словарь")
+            continue
+        code = s.get("code")
+        if not isinstance(code, str) or not re.fullmatch(r"\d{3,8}", code):
+            errors.append(f"{where}: code — строка из 3-8 цифр в кавычках, например \"0481\"")
+            continue
+        if code in seen:
+            errors.append(f"{where}: повтор кода {code}")
+        seen.add(code)
+        lengths.add(len(code))
+        kind = s.get("kind", "regular")
+        if kind not in SEED_KINDS:
+            errors.append(f"{where}: kind — regular, golden или rainbow")
+        else:
+            kinds[kind] += 1
+    if len(lengths) > 1:
+        warnings.append("seeds.yaml: коды разной длины, телефон не сможет отправлять код сам по последней цифре")
+    if kinds["rainbow"] != 1:
+        warnings.append(f"seeds.yaml: радужных семечек {kinds['rainbow']}, задумана одна")
+    if not data:
+        warnings.append("seeds.yaml: список пуст")
+
+
 def check(content_dir: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     check_facts(content_dir, errors, warnings)
     check_quiz(content_dir, errors, warnings)
+    check_seeds(content_dir, errors, warnings)
     return errors, warnings

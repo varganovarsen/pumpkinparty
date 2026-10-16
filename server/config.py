@@ -29,6 +29,13 @@ DEFAULTS: dict = {
         "max_points": 500,
     },
     "carve": {"bonus": [500, 300, 100], "fps_fallback_threshold": 24},
+    "seeds": {
+        "minutes": 5,
+        "points": {"regular": 30, "golden": 100, "rainbow": 300},
+        "wrong_limit": 3,
+        "cooldown_seconds": 10,
+        "host_can_play": False,
+    },
     "head": {
         "mode": "quiet",
         "interval_minutes": 6,
