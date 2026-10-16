@@ -168,7 +168,21 @@ function renderSettings() {
     toggle('Скрыть общий рейтинг', 'hide_total', 'Телефоны не показывают сумму очков'),
     toggle('Лёгкий фон (без видео)', 'light_mode', 'Если ноутбук не тянет видео'),
     toggle('Карточка новых фото', 'new_photo_card'),
-    toggle('Случайные кадры вебки', 'shots_enabled', 'Раз в 8-15 минут в ambient и перерыве'),
+    toggle('Случайные кадры вебки', 'shots_enabled', 'Только в ambient и перерыве, не поверх головы'),
+  );
+  // частота кадров вебки: случайно между «от» и «до» минут; кнопка — кадр сразу, в любой сцене
+  const shotsInput = (key) => {
+    const inp = el('input', { type: 'number', min: '1', max: '120', step: '1', value: String(S.settings[key] ?? ''), style: { width: '68px', padding: '6px 8px' } });
+    inp.addEventListener('change', () => setSetting(key, Number(inp.value)));
+    return inp;
+  };
+  const next = S.settings.shots_enabled && S.settings.shot_next_at ? `следующий около ${fmtTime(S.settings.shot_next_at)}` : 'по таймеру не снимаются';
+  box.settings.append(
+    el('div', { class: 'toggle' },
+      el('div', {}, 'Интервал кадров, минут', el('div', { class: 'muted', style: { fontSize: '.85rem' } }, next)),
+      el('div', { style: { whiteSpace: 'nowrap' } }, 'от ', shotsInput('shots_min_minutes'), ' до ', shotsInput('shots_max_minutes'))),
+    el('button', { style: { width: '100%', marginTop: '8px' }, onclick: () => run('shot_now', {}, 'Камера готовится…') },
+      '📷 Сделать кадр сейчас'),
   );
   const loud = S.settings.head_mode === 'loud';
   const interval = el('input', { type: 'number', min: '1', max: '60', value: String(S.settings.head_interval_minutes ?? 6), style: { width: '90px' } });

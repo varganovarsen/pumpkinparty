@@ -146,11 +146,13 @@ class Photos:
     # ------------------------------------------------------------------ случайные кадры вебки
     def _ensure_next_shot(self) -> None:
         if self.ev.settings.get("shot_next_at") is None:
-            self._schedule_next()
+            self.schedule_next()
 
-    def _schedule_next(self) -> None:
-        lo, hi = self.ev.cfg["random_shots"]["interval_minutes"]
-        self.ev._set("shot_next_at", self.ev.clock.now() + random.uniform(float(lo), float(hi)) * 60)
+    def schedule_next(self) -> None:
+        """Срок следующего случайного кадра: через «от»-«до» минут (настройка ведущего) от текущего момента."""
+        lo = float(self.ev.settings.get("shots_min_minutes", self.ev.cfg["random_shots"]["interval_minutes"][0]))
+        hi = float(self.ev.settings.get("shots_max_minutes", self.ev.cfg["random_shots"]["interval_minutes"][1]))
+        self.ev._set("shot_next_at", self.ev.clock.now() + random.uniform(lo, max(lo, hi)) * 60)
 
     def tick(self) -> None:
         if self.shot_running or not self.ev.settings.get("shots_enabled", True):
@@ -184,7 +186,8 @@ class Photos:
             self.ev.emit("tv", {"t": "shot", "stage": "taken", "photo": photo, "seconds": SHOT_SHOW_SECONDS})
         finally:
             self.shot_running = False
-            self._schedule_next()
+            self.schedule_next()
+            self.ev.emit_settings()  # ведущий видит, когда следующий кадр
 
     def reload(self) -> None:
         self.shot_running = False

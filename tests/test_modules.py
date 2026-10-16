@@ -251,6 +251,22 @@ def test_webcam_failure_is_logged_not_fatal(data_dir, monkeypatch):
         assert c.app.state.ev.photos.shot_running is False
 
 
+def test_shots_interval_setting_reschedules(data_dir):
+    with client(data_dir) as c:
+        ev = c.app.state.ev
+        with c.websocket_connect("/ws?role=host") as host:
+            recv_until(host, "snapshot")
+            assert cmd(host, "set_setting", key="shots_max_minutes", value=2)["ok"]
+            assert ev.settings["shots_min_minutes"] == 2  # «от» подтянулось к «до»
+            assert ev.settings["shot_next_at"] <= ev.clock.now() + 2 * 60 + 1
+            assert cmd(host, "set_setting", key="shots_min_minutes", value=30)["ok"]
+            assert ev.settings["shots_max_minutes"] == 30
+            assert ev.settings["shot_next_at"] >= ev.clock.now() + 30 * 60 - 1
+            assert not cmd(host, "set_setting", key="shots_min_minutes", value=0)["ok"]
+            s = wait(host, "settings", lambda m: True)["settings"]
+            assert "shot_next_at" in s
+
+
 # ---------------------------------------------------------------------- голова
 def test_head_scheduler_respects_scene_gap(data_dir):
     with client(data_dir, tv_localhost_only=False) as c:

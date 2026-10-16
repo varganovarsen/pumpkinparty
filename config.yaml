@@ -23,7 +23,7 @@ head:
   interval_jitter_minutes: 1
   min_gap_after_scene_minutes: 3
 random_shots:
-  interval_minutes: [8, 15]
+  interval_minutes: [8, 15]          # стартовое значение; ведущий меняет в /host → Настройки
   allowed_scenes: [ambient, timer]   # [по умолчанию]
 ambient:
   light_mode: false

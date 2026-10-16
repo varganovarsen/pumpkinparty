@@ -125,7 +125,7 @@
 | Роль | Команда | Аргументы |
 |---|---|---|
 | host | `set_scene` | `scene, payload?, force?` — из живой фазы (вопрос квиза, игра, голосование) без `force` вернёт `code: "confirm_required"` |
-| host | `set_setting` | `key, value`; ключи: `host_in_scoring, hide_total, head_mode, head_enabled, head_interval_minutes, light_mode, new_photo_card, shots_enabled, alley_slides` |
+| host | `set_setting` | `key, value`; ключи: `host_in_scoring, hide_total, head_mode, head_enabled, head_interval_minutes, light_mode, new_photo_card, shots_enabled, shots_min_minutes, shots_max_minutes, alley_slides` (интервал кадров вебки 1-120 мин; «от» > «до» подтягивает вторую границу и пересчитывает `shot_next_at`, он есть в `settings`) |
 | host | `adjust_score` | `player_id, amount (≠0), note` → запись `manual` в ledger |
 | host | `reset_evening` | `confirm: "СБРОС"` → `{backup}` |
 | host | `reload_scene`, `sound_test` | — |

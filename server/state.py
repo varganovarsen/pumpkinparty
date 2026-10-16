@@ -145,6 +145,8 @@ class Evening:
             "light_mode": bool(c["ambient"]["light_mode"]),
             "new_photo_card": bool(c["ambient"]["new_photo_card"]),
             "shots_enabled": True,
+            "shots_min_minutes": float(c["random_shots"]["interval_minutes"][0]),
+            "shots_max_minutes": float(c["random_shots"]["interval_minutes"][1]),
             "alley_slides": False,
             "carve_locked": False,
             "head_next_at": None,
@@ -443,7 +445,7 @@ class Evening:
     HOST_SETTINGS = {
         "host_in_scoring": bool, "hide_total": bool, "head_mode": str, "head_enabled": bool,
         "head_interval_minutes": float, "light_mode": bool, "new_photo_card": bool, "shots_enabled": bool,
-        "alley_slides": bool,
+        "alley_slides": bool, "shots_min_minutes": float, "shots_max_minutes": float,
     }
 
     def set_setting(self, key: str, value: Any) -> None:
@@ -454,6 +456,8 @@ class Evening:
             raise CmdError("Режим головы: quiet или loud", "bad_setting")
         if key == "head_interval_minutes" and not 1 <= value <= 60:
             raise CmdError("Интервал от 1 до 60 минут", "bad_setting")
+        if key in ("shots_min_minutes", "shots_max_minutes") and not 1 <= value <= 120:
+            raise CmdError("Интервал кадров от 1 до 120 минут", "bad_setting")
         if key == "host_in_scoring":
             if self.settings["quiz_started"]:
                 raise CmdError("Квиз уже начался, зачёт ведущего менять нельзя", "locked")
@@ -465,6 +469,13 @@ class Evening:
         self._set(key, value)
         if key == "head_interval_minutes":
             self._head_schedule()
+        # «от» больше «до»: подтянуть вторую границу, затем пересчитать срок следующего кадра
+        if key == "shots_min_minutes" and value > self.settings["shots_max_minutes"]:
+            self._set("shots_max_minutes", value)
+        if key == "shots_max_minutes" and value < self.settings["shots_min_minutes"]:
+            self._set("shots_min_minutes", value)
+        if key in ("shots_min_minutes", "shots_max_minutes", "shots_enabled"):
+            self.photos.schedule_next()
         self.log(f"Настройка {key} = {value}")
         self.emit_settings()
         if key == "hide_total":
@@ -474,7 +485,7 @@ class Evening:
                 self.emit_quiz()  # рейтинг на экране мог показывать общий итог
 
     def public_settings(self) -> dict:
-        keys = list(self.HOST_SETTINGS) + ["quiz_started", "carve_locked"]
+        keys = list(self.HOST_SETTINGS) + ["quiz_started", "carve_locked", "shot_next_at"]
         return {k: self.settings[k] for k in keys}
 
     def adjust_score(self, player_id: int, amount: int, note: str) -> None:
