@@ -417,6 +417,13 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         return FileResponse(path, media_type="application/zip", filename="tykvenny-spas.zip",
                             background=BackgroundTask(path.unlink, missing_ok=True))
 
+    @app.get("/api/credits")
+    async def credits():
+        """Титры (лицензии CC BY/BY-SA требуют атрибуции): content/credits.txt, строка на автора."""
+        p = cfg.content_dir / "credits.txt"
+        lines = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+        return {"lines": [ln.strip() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]}
+
     # ------------------------------------------------------------------ липсинк (модуль 04)
     @app.get("/api/lipsync")
     async def lipsync_list():

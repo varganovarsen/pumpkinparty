@@ -1,6 +1,6 @@
 # Протокол клиент ↔ сервер
 
-Версия этапа 1 (ядро). Дополняется в модулях 02-07 до начала каждого этапа.
+Актуально для всех модулей (01-07).
 
 ## REST (вход и загрузки)
 
@@ -36,7 +36,7 @@
 
 - `role=tv` принимается только с localhost (если `tv_localhost_only`), иначе `{"t":"error","code":"tv_localhost_only"}` и закрытие 4403.
 - `role=player` с неизвестным токеном: `{"t":"auth_failed"}` и закрытие 4401 → клиент забывает токен и показывает вход.
-- Закрытия 4400/4401/4403 — без переподключения. Остальные — переподключение с нарастающей паузой (0,4 → 5 с).
+- Закрытия 4400/4401/4403 — без переподключения. 4001 — после «Сбросить вечер» (игрок), 4002 — клиент не успевал читать (переполнена очередь). Остальные — переподключение с нарастающей паузой (0,4 → 5 с).
 
 ### Синхронизация часов
 
@@ -52,9 +52,9 @@
 
 | Роль | Дополнительно |
 |---|---|
-| player | `me`, `facts`, `facts_locked`, `avatars_taken`, `quiz` (вид игрока) |
-| tv | `players`, `head`, `stubs` (список путей-заглушек), `quiz` |
-| host | `players`, `log` (50 строк), `scenes`, `next_step`, `tv_count`, `quiz` (полный вид) |
+| player | `me`, `facts`, `facts_locked`, `avatars_taken`, `quiz/game/vote/timer/finale` (вид игрока) |
+| tv | `players`, `head`, `stubs` (список путей-заглушек), `client_config`, `quiz/game/vote/timer/finale` |
+| host | `players`, `log` (50 строк), `scenes`, `next_step`, `tv_count`, `head`, `quiz/game/vote/timer/finale` (полный вид) |
 | carve | `players` (без очков, с `pumpkin_version`: 0 — тыквы нет) |
 
 `scene = {scene, payload, started_at, participating, title}`.
@@ -125,7 +125,7 @@
 | Роль | Команда | Аргументы |
 |---|---|---|
 | host | `set_scene` | `scene, payload?, force?` — из живой фазы (вопрос квиза, игра, голосование) без `force` вернёт `code: "confirm_required"` |
-| host | `set_setting` | `key, value`; ключи: `host_in_scoring, hide_total, head_mode, head_enabled, head_interval_minutes, light_mode, new_photo_card` |
+| host | `set_setting` | `key, value`; ключи: `host_in_scoring, hide_total, head_mode, head_enabled, head_interval_minutes, light_mode, new_photo_card, shots_enabled, alley_slides` |
 | host | `adjust_score` | `player_id, amount (≠0), note` → запись `manual` в ledger |
 | host | `reset_evening` | `confirm: "СБРОС"` → `{backup}` |
 | host | `reload_scene`, `sound_test` | — |
@@ -141,7 +141,7 @@
 | host | `photo_hide` | `id, hidden` |
 | host | `photo_delete` | `id` → файлы в `data/_deleted/` |
 | host | `game_start` | `mode: practice\|scored` (сцена `game`); `game_reset` — аварийный сброс очков игры |
-| host | `vote_start`, `vote_close` (сцена `carve_vote`), `vote_reveal` (сцена `carve_reveal`) | — |
+| host | `vote_start`, `vote_close` (сцена `carve_vote`), `vote_reveal` (сцена `carve_reveal`), `vote_reset` (аварийно) | — |
 | host | `timer_set` | `minutes, label?`; `timer_pause {paused}`, `timer_add {seconds}`, `timer_label {label}` |
 | host | `rating_next`, `rating_restart` (сцена `rating_reveal`), `slideshow_pause {paused}` | — |
 | player | `game_progress` | `score` — живой счёт; `game_result {caught: [i…]}` → `{score}` (сервер пересчитывает по расписанию) |

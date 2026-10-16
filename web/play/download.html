@@ -27,6 +27,7 @@
   <p id="ios-hint" class="muted hidden" style="text-align:center">На iPhone несколько фото приходят архивом в «Файлы». Чтобы сразу в «Фото» — отмечай по одному и сохраняй каждое (зажми фото → «Сохранить в Фото»).</p>
   <div id="photos" class="grid"></div>
   <div id="pumpkins-box" class="hidden"><h2>🎃 Тыквы</h2><div id="pumpkins" class="grid"></div></div>
+  <div id="credits" class="muted" style="font-size:.75rem;margin-top:30px"></div>
 </main>
 <div class="bar">
   <button id="all">Выбрать все</button>
@@ -97,6 +98,9 @@
     document.getElementById('ios-hint').classList.remove('hidden');
   }
   load().catch(() => toast('Нет связи с сервером'));
+  fetch('/api/credits').then((r) => r.json()).then((c) => {
+    for (const line of c.lines) document.getElementById('credits').append(el('p', {}, line));
+  }).catch(() => {});
 </script>
 </body>
 </html>

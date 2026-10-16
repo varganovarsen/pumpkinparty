@@ -1,0 +1,3 @@
+# Титры: каждая строка показывается внизу страницы скачивания (/download). Строки с # пропускаются.
+Фото сортов: George Chernilevsky (PD), さつまやまいもすけ (CC0), Jamain (CC BY-SA 3.0/4.0), Barbara Carr (CC BY-SA 2.0), Hyunjung Kim (CC0), Daderot (CC0), Nick Ares (CC BY-SA 2.0), BI613en (CC BY-SA 4.0), Wikimedia Commons. Подробно: content/SOURCES.md
+3D-модель тыквы: «Pumpkin», автор Batuhan13 (sketchfab.com/Batuhan13), CC BY 4.0

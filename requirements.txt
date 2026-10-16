@@ -1,14 +1,15 @@
-fastapi>=0.110
-uvicorn[standard]>=0.29
-python-multipart>=0.0.9
-pyyaml>=6.0
-pillow>=10.3
-pillow-heif>=0.16
-opencv-python-headless>=4.9
-qrcode>=7.4
-numpy>=1.26
-scipy>=1.12
-soundfile>=0.12
+# Версии закреплены: ноутбук получает ровно то, что проверено на ПК (обновлять осознанно).
+fastapi==0.143.2
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+pyyaml==6.0.3
+pillow==12.3.0
+pillow-heif==1.8.1
+opencv-python-headless==5.0.0.93
+qrcode==8.2
+numpy==2.5.4
+scipy==1.18.1
+soundfile==0.14.0
 # симулятор
-httpx>=0.27
-websockets>=12.0
+httpx==0.28.1
+websockets==17.2
