@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Редактор ярмарки</title>
+<style>
+:root {
+  --bg: #faf6f0; --panel: #fffdf9; --ink: #2b2118; --muted: #7a6a5a; --line: #e6dccf;
+  --accent: #c8611b; --accent-ink: #fff; --soft: #f3e9dc; --ok: #3d7a3a; --bad: #b3361f; --warn: #b07a12;
+  --changed: #fff1c9; --bar: #d98a4a; --bar2: #8a9e5b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1c1814; --panel: #241f1a; --ink: #eee4d8; --muted: #a8988a; --line: #3a3229;
+    --accent: #e0803a; --accent-ink: #1c1814; --soft: #2e2720; --ok: #7fbf6f; --bad: #ef7d63; --warn: #e3b04b;
+    --changed: #4a3d1c; --bar: #c97a3c; --bar2: #8fa760;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1c1814; --panel: #241f1a; --ink: #eee4d8; --muted: #a8988a; --line: #3a3229;
+  --accent: #e0803a; --accent-ink: #1c1814; --soft: #2e2720; --ok: #7fbf6f; --bad: #ef7d63; --warn: #e3b04b;
+  --changed: #4a3d1c; --bar: #c97a3c; --bar2: #8fa760;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; }
+header h1 { font-size: 17px; margin: 0; }
+header .path { color: var(--muted); font-size: 12px; }
+header .spacer { flex: 1; }
+#status { font-size: 13px; }
+#status.dirty { color: var(--warn); } #status.err { color: var(--bad); } #status.ok { color: var(--ok); }
+button { font: inherit; border: 1px solid var(--line); background: var(--soft); color: var(--ink); border-radius: 6px;
+  padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button.icon { padding: 2px 7px; background: transparent; }
+button.danger:hover { color: var(--bad); border-color: var(--bad); }
+input, select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 3px 6px; }
+input[type=number] { width: 80px; }
+input.name { width: 100%; min-width: 120px; font-weight: 600; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 520px); gap: 16px; padding: 16px; align-items: start; }
+@media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { main { padding: 12px 16px; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+#sim { position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto; }
+@media (max-width: 1100px) { #sim { position: static; max-height: none; } }
+nav.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+nav.tabs button { border-radius: 16px; }
+nav.tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+#errors { display: none; background: color-mix(in srgb, var(--bad) 12%, var(--panel)); border: 1px solid var(--bad);
+  color: var(--bad); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; white-space: pre-wrap; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.muted { color: var(--muted); } .small { font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--line); border-radius: 14px;
+  padding: 1px 4px 1px 8px; background: var(--soft); white-space: nowrap; }
+.chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); cursor: pointer; padding-right: 8px; }
+.chip.off { cursor: pointer; padding-right: 8px; background: transparent; color: var(--muted); }
+.chip.main { border-color: var(--accent); }
+.chip button { border: 0; background: transparent; padding: 0 3px; color: inherit; }
+.chip input[type=number] { width: 40px; padding: 0 3px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 12px; padding: 8px 12px 10px; }
+legend { font-weight: 600; padding: 0 4px; }
+.field { display: grid; grid-template-columns: minmax(150px, 220px) auto 1fr; gap: 4px 10px; align-items: center; padding: 3px 0; }
+@media (max-width: 600px) { .field { grid-template-columns: 1fr; } }
+.field label { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+.field .hint { color: var(--muted); font-size: 12px; }
+.field.changed { background: var(--changed); border-radius: 5px; }
+.field .was { font-size: 11px; color: var(--muted); cursor: pointer; text-decoration: underline dotted; }
+.nested { margin-left: 14px; border-left: 2px solid var(--line); padding-left: 10px; }
+tr.changed td:first-child { box-shadow: inset 3px 0 var(--warn); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin: 10px 0; }
+.tile { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.tile .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .l { font-size: 11px; color: var(--muted); }
+.tile .d, .delta { font-size: 11px; }
+.up { color: var(--ok); } .down { color: var(--bad); } .flat { color: var(--muted); }
+.tile.badv .v { color: var(--bad); }
+.winbar { position: relative; height: 10px; background: var(--soft); border-radius: 3px; min-width: 80px; }
+.winbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--bar); border-radius: 3px; }
+.winbar b { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+.stack { display: flex; height: 14px; border-radius: 4px; overflow: hidden; margin: 4px 0; }
+.stack span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+ul.flags { padding-left: 18px; margin: 6px 0; } ul.flags li { color: var(--bad); }
+h3 { font-size: 14px; margin: 14px 0 6px; }
+pre { white-space: pre; overflow-x: auto; font-size: 11.5px; background: var(--soft); padding: 8px; border-radius: 6px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.note { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+.toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+  padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Осенняя ярмарка — редактор</h1>
+  <span class="path" id="path"></span>
+  <span class="spacer"></span>
+  <span id="status"></span>
+  <button id="revert" title="Вернуть то, что в файле">Отменить правки</button>
+  <button id="save" class="primary" title="Ctrl+S">Сохранить</button>
+</header>
+<main>
+  <section class="panel" id="editor">
+    <nav class="tabs" id="tabs"></nav>
+    <div id="errors"></div>
+    <div id="view"></div>
+  </section>
+  <aside class="panel" id="sim">
+    <div class="toolbar">
+      <strong>Прогон ботов</strong>
+      <label class="small">партий <input type="number" id="simN" value="200" min="10" max="5000" step="50"></label>
+      <label class="small">сид <input type="number" id="simSeed" value="1" style="width:60px"></label>
+      <button id="run" class="primary">Запустить</button>
+    </div>
+    <p class="note">Гоняет текущие правки, даже несохранённые. Дельты считаются от эталона: первый прогон или тот, что вы закрепили.</p>
+    <div id="simOut"><p class="muted">Ещё не запускали.</p></div>
+  </aside>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+// ---------------------------------------------------------------- состояние
+let cfg = null, saved = null, savedText = "", errors = [], tab = "dishes";
+let base = null, last = null;              // эталонный и последний прогон
+const TABS = [["roles", "Роли"], ["raws", "Сырьё"], ["dishes", "Блюда"], ["balance", "Баланс"], ["bots", "Боты"], ["flags", "Флаги"]];
+try { tab = localStorage.getItem("fair.tab") || tab; } catch (e) {}
+
+const HINTS = {
+  players: "игроков за столом (роли раздаются по кругу)", start_coins: "монет на старте",
+  weeks: "недель подготовки", actions_per_week: "действий в неделю", gather_profile: "своего сырья за «собрать»",
+  gather_other: "чужого сырья за «собрать»", cook_actions: "действий на «приготовить»",
+  cook_actions_cheap: "у роли из поля cheap блюда", rumor_weeks: "недели, когда приходят слухи",
+  fair_days: "дней ярмарки", stops_per_buyer: "остановок у покупателя",
+  buyers_per_player: "главная ручка: карточек покупателей на игрока-покупателя в половине дня",
+  fill_idle_stands: "стенд без покупателя при нечётном числе получает вторую карточку",
+  "buyer.positions": "позиций в списке покупателя, от–до", "buyer.qty_weights": "порций в позиции: {штук: вес}",
+  "buyer.max_range": "тайный максимум, доля базы", "buyer.weakness_range": "максимум на втюхивание, доля базы",
+  "buyer.pays_bonus": "банк платит игроку-покупателю «максимум − цена»",
+  "demand.base_weight": "базовый вес блюда в карточках", "demand.main_ingredient_weight": "+ за игрока с профильным главным ингредиентом",
+  "demand.cheap_cook_weight": "+ за игрока, готовящего блюдо дёшево",
+  "orders.deck_size": "карточек заказов", "orders.choices": "на выбор", "orders.dishes": "блюд на карточке, от–до",
+  "orders.qty": "штук каждого, от–до", "orders.penalty": "штраф: доля стоимости невыполненного",
+  "events.count": "событий на ярмарке", "events.weather_bonus": "надбавка за погодную категорию",
+  "events.exclusive": "события, которые не выпадают вместе (JSON)",
+  "tender.count": "блюд в тендере", "tender.start": "стартовая цена, доля базы", "tender.step": "минимальное снижение",
+  "tender.dish_in_rumor": "слух называет блюдо тендера", "banquet.max_dishes": "блюд в наборе", "banquet.bonus": "надбавка банкета",
+  "market.rounds": "раундов сведения заявок",
+  "bots.mix": "архетипы раздаются ботам по кругу",
+  target_dishes: "сколько блюд хочет к ярмарке", cook_from_week: "с какой недели готовит", max_orders: "заказов максимум",
+  order_load: "берёт заказ, если план ≤ этой доли оставшихся действий", action_value: "«цена» действия при выборе блюд",
+  profile_cost: "своё сырьё в оценке блюда, доля базы", buy_cost: "чужое сырьё, доля базы",
+  self_gather_share: "долю чужого сырья собирает сам", diversity: "штраф за повтор блюда", taste_noise: "личный вкус ± монет",
+  event_focus: "насколько учитывает слухи", need_value: "ценность нужного сырья, доля базы", unlock_value: "+ монет за недостающую единицу",
+  surplus_value: "ценность лишнего профильного сырья", raw_bid: "ставка на сырьё", bid_urgency: "+ к ставке к концу подготовки",
+  raw_ask: "просит за сырьё", order_dish_bid: "купить блюдо под заказ", dish_hold: "ценность блюда до/во время ярмарки",
+  dump_ask: "сбыть ненужное после ярмарки", deal_margin: "насколько выгоднее должно быть предложение человека",
+  ask_q: "просит: доля диапазона max_range (0 — низ, 1 — верх)", ask_noise: "разброс запроса",
+  floor_q: "минимум встречной, доля диапазона", late_discount: "снижение минимума к последнему дню",
+  push_prob: "вероятность втюхивать", push_q: "цена втюхивания, доля weakness_range", push_floor_q: "минимум встречной на втюхивание",
+  buyer_accept: "берёт сразу, если цена ≤ доля максимума", buyer_counter: "встречная, доля максимума",
+  buyer_counter_last: "встречная на последней остановке", tender_floor: "ниже этой доли базы в тендере не идёт",
+  "flags.dominant_win_ratio": "доля побед больше честной в N раз", "flags.weak_coins_ratio": "монеты ниже среднего в N раз",
+  "flags.strong_coins_ratio": "монеты выше среднего в N раз", "flags.dishes_before_fair": "цель блюд к ярмарке",
+  "flags.sellthrough_high": "спрос закрыт больше — товара мало", "flags.sellthrough_low": "спрос закрыт меньше — не те блюда",
+  "flags.unsold_high": "не продано больше этой доли", "flags.stock_empty_day5": "к последнему дню на складе меньше доли",
+  "flags.orders_income_share": "заказы больше этой доли дохода", "flags.buyer_bonus_share": "роль покупателя больше доли дохода",
+  "flags.push_share": "втюхивание больше доли выручки", "flags.tender_empty_rate": "пустых тендеров больше",
+  "flags.order_fail_rate": "невыполненных заказов больше", "flags.negative_rate": "в минусе больше",
+};
+const SECTIONS = [
+  ["Подготовка", ["players", "start_coins", "weeks", "actions_per_week", "gather_profile", "gather_other", "cook_actions", "cook_actions_cheap", "rumor_weeks"]],
+  ["Ярмарка", ["fair_days", "stops_per_buyer", "buyers_per_player", "fill_idle_stands"]],
+  ["Покупатели", ["buyer"]], ["Спрос следует за ролями", ["demand"]], ["Заказы", ["orders"]],
+  ["События", ["events"]], ["Тендер", ["tender"]], ["Банкет", ["banquet"]], ["Рынок", ["market"]],
+];
+const CONTENT_KEYS = new Set(["roles", "raws", "dishes", "bots", "flags"]);
+
+// ---------------------------------------------------------------- утилиты
+const $ = (s) => document.querySelector(s);
+const clone = (x) => JSON.parse(JSON.stringify(x));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "class") e.className = v;
+    else if (k === "value") e.value = v;
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k instanceof Node ? k : String(k));
+  return e;
+}
+function getAt(o, path) { return path.reduce((x, k) => (x == null ? undefined : x[k]), o); }
+function setAt(o, path, v) { getAt(o, path.slice(0, -1))[path.at(-1)] = v; }
+function renameKey(obj, from, to) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) out[k === from ? to : k] = v;
+  return out;
+}
+function replaceObj(target, src) { for (const k of Object.keys(target)) delete target[k]; Object.assign(target, src); }
+const pct = (x) => `${Math.round(x * 100)}%`;
+const f1 = (x) => (Math.round(x * 10) / 10).toFixed(1);
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2200); }
+function uniqueName(obj, base) { let n = base, i = 2; while (n in obj) n = `${base} ${i++}`; return n; }
+
+// ---------------------------------------------------------------- сеть
+async function api(url, body) {
+  const r = await fetch(url, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  return { ok: r.ok, ...j };
+}
+async function load() {
+  const j = await api("/api/config");
+  cfg = j.cfg; saved = clone(cfg); savedText = JSON.stringify(cfg);
+  $("#path").textContent = j.path + (j.comments ? "" : " — без ruamel.yaml комментарии при сохранении пропадут");
+  errors = []; render(); status();
+}
+let vTimer = null;
+function changed() { status(); clearTimeout(vTimer); vTimer = setTimeout(validate, 350); }
+async function validate() {
+  const j = await api("/api/validate", { cfg });
+  errors = j.errors || [];
+  const box = $("#errors");
+  box.style.display = errors.length ? "block" : "none";
+  box.textContent = errors.join("\n");
+  status();
+}
+function status() {
+  const s = $("#status"), dirty = JSON.stringify(cfg) !== savedText;
+  s.className = errors.length ? "err" : dirty ? "dirty" : "ok";
+  s.textContent = errors.length ? "ошибка в конфиге" : dirty ? "есть несохранённые правки" : "сохранено";
+  $("#save").disabled = !dirty || errors.length > 0;
+  $("#revert").disabled = !dirty;
+  if ($("#toBase")) $("#toBase").disabled = same(cfg, base.cfgSnapshot);
+}
+async function save() {
+  if ($("#save").disabled) return;
+  const j = await api("/api/save", { cfg });
+  if (!j.ok) { errors = j.errors || ["ошибка"]; validate(); return; }
+  saved = clone(cfg); savedText = JSON.stringify(cfg); status(); render();
+  toast(`${j.message}; прошлая версия — config.yaml.bak`);
+}
+
+// ---------------------------------------------------------------- вкладки
+function render() {
+  const nav = $("#tabs"); nav.replaceChildren();
+  for (const [id, name] of TABS) nav.append(el("button", { class: id === tab ? "on" : "", onclick: () => { tab = id; try { localStorage.setItem("fair.tab", id); } catch (e) {} render(); } }, name));
+  const v = $("#view"), y = window.scrollY;
+  v.replaceChildren(({ roles: viewRoles, raws: viewRaws, dishes: viewDishes, balance: viewBalance, bots: viewBots, flags: viewFlags })[tab]());
+  window.scrollTo(0, y);
+}
+
+// --- роли
+function viewRoles() {
+  const raws = Object.keys(cfg.raws), wrap = el("div");
+  const n = cfg.players, roles = Object.keys(cfg.roles);
+  const count = Object.fromEntries(roles.map((r, i) => [r, Array.from({ length: n }, (_, j) => roles[j % roles.length]).filter((x) => x === r).length]));
+  wrap.append(el("div", { class: "toolbar" },
+    el("button", { onclick: () => { cfg.roles[uniqueName(cfg.roles, "Новая роль")] = []; changed(); render(); } }, "+ роль"),
+    el("span", { class: "muted small" }, `При ${n} игроках: ` + roles.map((r) => `${r} ×${count[r]}`).join(", "))));
+  const cards = el("div", { class: "cards" });
+  for (const role of roles) {
+    const prof = cfg.roles[role];
+    const cheap = Object.entries(cfg.dishes).filter(([, d]) => d.cheap === role).map(([k]) => k);
+    const mainOf = Object.entries(cfg.dishes).filter(([, d]) => prof.includes(Object.keys(d.ingredients)[0])).map(([k]) => k);
+    const isChanged = !same(prof, saved.roles?.[role]);
+    cards.append(el("div", { class: "card", style: isChanged ? "border-color: var(--warn)" : "" },
+      el("div", { class: "row" },
+        el("input", { class: "name", value: role, style: "flex:1", onchange: (e) => renameRole(role, e.target.value.trim()) }),
+        el("button", { class: "icon danger", title: "Удалить роль", onclick: () => deleteRole(role) }, "✕")),
+      el("div", {}, el("div", { class: "small muted" }, "Профильное сырьё (нажмите, чтобы включить/выключить):"),
+        el("div", { class: "chips" }, raws.map((r) => el("span", {
+          class: "chip " + (prof.includes(r) ? "on" : "off"),
+          onclick: () => { cfg.roles[role] = prof.includes(r) ? prof.filter((x) => x !== r) : [...prof, r]; changed(); render(); },
+        }, r)))),
+      el("div", { class: "small" }, el("span", { class: "muted" }, `Готовит дёшево (${cheap.length}): `), cheap.join(", ") || "—"),
+      el("div", { class: "small" }, el("span", { class: "muted" }, `Главный ингредиент свой (${mainOf.length}): `), mainOf.join(", ") || "—"),
+    ));
+  }
+  wrap.append(cards);
+  return wrap;
+}
+function renameRole(from, to) {
+  if (!to || to === from) return render();
+  if (to in cfg.roles) { toast(`Роль «${to}» уже есть`); return render(); }
+  cfg.roles = renameKey(cfg.roles, from, to);
+  for (const d of Object.values(cfg.dishes)) if (d.cheap === from) d.cheap = to;
+  changed(); render();
+}
+function deleteRole(role) {
+  const cheap = Object.values(cfg.dishes).filter((d) => d.cheap === role).length;
+  if (Object.keys(cfg.roles).length <= 1) return toast("Нужна хотя бы одна роль");
+  delete cfg.roles[role];
+  for (const d of Object.values(cfg.dishes)) if (d.cheap === role) delete d.cheap;
+  if (cheap) toast(`У ${cheap} блюд снята дешёвая готовка`);
+  changed(); render();
+}
+
+// --- сырьё
+function viewRaws() {
+  const wrap = el("div");
+  wrap.append(el("div", { class: "toolbar" },
+    el("button", { onclick: () => { cfg.raws[uniqueName(cfg.raws, "сырьё")] = 2; changed(); render(); } }, "+ сырьё")));
+  wrap.append(el("p", { class: "note" }, "«Нужно в блюдах» — сколько единиц уходит, если приготовить каждое блюдо по разу. Переименование доходит до ролей и рецептов."));
+  const used = {}, inDishes = {};
+  for (const [name, d] of Object.entries(cfg.dishes)) for (const [r, q] of Object.entries(d.ingredients)) {
+    used[r] = (used[r] || 0) + q; (inDishes[r] ||= []).push(name);
+  }
+  const tb = el("tbody");
+  for (const [raw, price] of Object.entries(cfg.raws)) {
+    const who = Object.entries(cfg.roles).filter(([, p]) => p.includes(raw)).map(([k]) => k);
+    tb.append(el("tr", { class: saved.raws?.[raw] !== price ? "changed" : "" },
+      el("td", {}, el("input", { class: "name", value: raw, onchange: (e) => renameRaw(raw, e.target.value.trim()) })),
+      el("td", { class: "num" }, numInput(price, (v) => { cfg.raws[raw] = v; }, { step: 1, min: 0 })),
+      el("td", {}, who.join(", ") || el("span", { class: "down" }, "никто")),
+      el("td", { class: "num" }, used[raw] || 0),
+      el("td", { class: "small muted" }, (inDishes[raw] || []).join(", ")),
+      el("td", {}, el("button", { class: "icon danger", title: inDishes[raw] ? "Используется в блюдах" : "Удалить", disabled: !!inDishes[raw],
+        onclick: () => { delete cfg.raws[raw]; for (const r of Object.keys(cfg.roles)) cfg.roles[r] = cfg.roles[r].filter((x) => x !== raw); changed(); render(); } }, "✕"))));
+  }
+  wrap.append(el("div", { class: "scroll" }, el("table", {},
+    el("thead", {}, el("tr", {}, el("th", {}, "Сырьё"), el("th", { class: "num" }, "Цена"), el("th", {}, "Кто собирает"),
+      el("th", { class: "num" }, "Нужно в блюдах"), el("th", {}, "Где"), el("th", {}))), tb)));
+  return wrap;
+}
+function renameRaw(from, to) {
+  if (!to || to === from) return render();
+  if (to in cfg.raws) { toast(`«${to}» уже есть`); return render(); }
+  cfg.raws = renameKey(cfg.raws, from, to);
+  for (const r of Object.keys(cfg.roles)) cfg.roles[r] = cfg.roles[r].map((x) => (x === from ? to : x));
+  for (const d of Object.values(cfg.dishes)) d.ingredients = renameKey(d.ingredients, from, to);
+  changed(); render();
+}
+
+// --- блюда
+let dishFilter = "";
+function rawCost(d) { return Object.entries(d.ingredients).reduce((s, [r, q]) => s + (cfg.raws[r] ?? 0) * q, 0); }
+function viewDishes() {
+  const wrap = el("div"), cats = [...new Set(Object.values(cfg.dishes).map((d) => d.category))].sort();
+  const roles = Object.keys(cfg.roles), raws = Object.keys(cfg.raws);
+  wrap.append(el("div", { class: "toolbar" },
+    el("button", { onclick: () => { const n = uniqueName(cfg.dishes, "Новое блюдо"); cfg.dishes[n] = { ingredients: { [raws[0]]: 2 }, category: cats[0] || "сладкое", base: 12 }; changed(); render(); } }, "+ блюдо"),
+    el("select", { onchange: (e) => { dishFilter = e.target.value; render(); } },
+      el("option", { value: "" }, "все категории"), cats.map((c) => el("option", { value: c, selected: c === dishFilter }, c))),
+    el("datalist", { id: "cats" }, cats.map((c) => el("option", { value: c })))));
+  wrap.append(el("p", { class: "note" }, "Первый ингредиент — главный (★), от него зависит спрос. «Сырьё» — стоимость рецепта по ценам сырья; «маржа» — база минус сырьё. Последний столбец — сколько готовили за партию в последнем прогоне."));
+  const tb = el("tbody");
+  for (const [name, d] of Object.entries(cfg.dishes)) {
+    if (dishFilter && d.category !== dishFilter) continue;
+    const costCell = el("td", { class: "num" }), marginCell = el("td", { class: "num" });
+    const upd = () => { const c = rawCost(d); costCell.textContent = c; marginCell.textContent = d.base - c; marginCell.className = "num " + (d.base - c < 3 ? "down" : ""); };
+    upd();
+    const ing = el("div", { class: "chips" });
+    const ingKeys = Object.keys(d.ingredients);
+    ingKeys.forEach((r, i) => ing.append(el("span", { class: "chip" + (i === 0 ? " main" : "") },
+      el("button", { title: i === 0 ? "главный" : "сделать главным", onclick: () => { if (i) { d.ingredients = { [r]: d.ingredients[r], ...Object.fromEntries(ingKeys.filter((k) => k !== r).map((k) => [k, d.ingredients[k]])) }; changed(); render(); } } }, i === 0 ? "★" : "☆"),
+      r, numInput(d.ingredients[r], (v) => { d.ingredients[r] = v; upd(); }, { step: 1, min: 1 }),
+      el("button", { title: "убрать", onclick: () => { if (ingKeys.length > 1) { delete d.ingredients[r]; changed(); render(); } } }, "×"))));
+    const free = raws.filter((r) => !(r in d.ingredients));
+    if (free.length) ing.append(el("select", { onchange: (e) => { if (e.target.value) { d.ingredients[e.target.value] = 1; changed(); render(); } } },
+      el("option", { value: "" }, "+"), free.map((r) => el("option", { value: r }, r))));
+    tb.append(el("tr", { class: same(d, saved.dishes?.[name]) ? "" : "changed" },
+      el("td", {}, el("input", { class: "name", value: name, style: "min-width:190px", onchange: (e) => renameDish(name, e.target.value.trim()) })),
+      el("td", {}, ing),
+      el("td", {}, el("input", { value: d.category, list: "cats", style: "width:95px", onchange: (e) => { d.category = e.target.value.trim(); changed(); render(); } })),
+      el("td", {}, el("select", { onchange: (e) => { if (e.target.value) d.cheap = e.target.value; else delete d.cheap; changed(); } },
+        el("option", { value: "" }, "—"), roles.map((r) => el("option", { value: r, selected: d.cheap === r }, r)))),
+      el("td", { class: "num" }, numInput(d.base, (v) => { d.base = v; upd(); }, { step: 1, min: 1 })),
+      costCell, marginCell,
+      el("td", { class: "num muted" }, last?.cooked_dish ? f1(last.cooked_dish[name] || 0) : ""),
+      el("td", { class: "small", style: "white-space:nowrap" },
+        el("button", { class: "icon", title: "Копия", onclick: () => { cfg.dishes[uniqueName(cfg.dishes, name)] = clone(d); changed(); render(); } }, "⧉"),
+        el("button", { class: "icon danger", title: "Удалить", onclick: () => { delete cfg.dishes[name]; changed(); render(); } }, "✕"))));
+  }
+  wrap.append(el("div", { class: "scroll" }, el("table", {},
+    el("thead", {}, el("tr", {}, ["Блюдо", "Рецепт", "Категория", "Дёшево у"].map((h) => el("th", {}, h)),
+      ["База", "Сырьё", "Маржа", "Готовили"].map((h) => el("th", { class: "num" }, h)), el("th", {}))), tb)));
+  return wrap;
+}
+function renameDish(from, to) {
+  if (!to || to === from) return render();
+  if (to in cfg.dishes) { toast(`«${to}» уже есть`); return render(); }
+  cfg.dishes = renameKey(cfg.dishes, from, to); changed(); render();
+}
+
+// --- общие поля
+function numInput(value, set, opts = {}) {
+  const isInt = Number.isInteger(value);
+  return el("input", { type: "number", value, step: opts.step ?? (isInt ? 1 : 0.05), min: opts.min,
+    oninput: (e) => { const v = e.target.valueAsNumber; if (!Number.isNaN(v)) { set(v); changed(); } } });
+}
+function field(path, root = cfg, savedRoot = saved, hintKey) {
+  const value = getAt(root, path), was = getAt(savedRoot, path);
+  const key = path.join("."), hint = HINTS[hintKey ?? key] ?? HINTS[path.at(-1)] ?? "";
+  if (value && typeof value === "object" && !Array.isArray(value) && !isNumKeyed(value)) {
+    return el("div", {}, el("div", { class: "field" }, el("label", {}, path.at(-1)), el("span"), el("span", { class: "hint" }, hint)),
+      el("div", { class: "nested" }, Object.keys(value).map((k) => field([...path, k], root, savedRoot))));
+  }
+  const row = el("div", { class: "field" + (same(value, was) ? "" : " changed") });
+  const mark = () => { const ch = !same(getAt(root, path), was); row.classList.toggle("changed", ch); wasEl.style.display = ch ? "" : "none"; };
+  const wasEl = el("span", { class: "was", title: "вернуть сохранённое", onclick: () => { setAt(root, path, clone(was)); changed(); render(); } },
+    `было: ${JSON.stringify(was)}`);
+  const set = (v) => { setAt(root, path, v); mark(); };
+  let input;
+  if (typeof value === "number") input = numInput(value, set);
+  else if (typeof value === "boolean") input = el("input", { type: "checkbox", checked: value, onchange: (e) => { set(e.target.checked); changed(); } });
+  else if (Array.isArray(value) && value.every((x) => typeof x === "number")) {
+    input = el("span", { class: "chips" }, value.map((x, i) => numInput(x, (v) => { const a = clone(getAt(root, path)); a[i] = v; set(a); })),
+      value.length !== 2 || key === "rumor_weeks" ? [
+        el("button", { class: "icon", title: "добавить", onclick: () => { setAt(root, path, [...value, value.at(-1) ?? 1]); changed(); render(); } }, "+"),
+        value.length > 1 ? el("button", { class: "icon", title: "убрать последнее", onclick: () => { setAt(root, path, value.slice(0, -1)); changed(); render(); } }, "−") : null] : null);
+  } else if (Array.isArray(value) && value.every((x) => typeof x === "string")) {
+    const options = key === "bots.mix" ? Object.keys(cfg.bots.archetypes) : key === "events.pool" ? ["tender", "banquet", ...Object.keys(cfg.events.weather)] : null;
+    input = el("span", { class: "chips" }, value.map((x, i) => el("span", { class: "chip" }, x,
+      el("button", { onclick: () => { setAt(root, path, value.filter((_, j) => j !== i)); changed(); render(); } }, "×"))),
+      options ? el("select", { onchange: (e) => { if (e.target.value) { setAt(root, path, [...value, e.target.value]); changed(); render(); } } },
+        el("option", { value: "" }, "+"), options.map((o) => el("option", { value: o }, o))) : null);
+  } else if (typeof value === "string") input = el("input", { value, oninput: (e) => { set(e.target.value); changed(); } });
+  else {
+    input = el("input", { value: JSON.stringify(value), style: "width:220px; font-family: ui-monospace, monospace",
+      onchange: (e) => { try { set(JSON.parse(e.target.value)); e.target.style.borderColor = ""; changed(); } catch (err) { e.target.style.borderColor = "var(--bad)"; } } });
+  }
+  if (same(value, was)) wasEl.style.display = "none";
+  row.append(el("label", { title: key }, path.at(-1)), input, el("span", { class: "hint" }, hint, " ", wasEl));
+  return row;
+}
+const isNumKeyed = (o) => Object.keys(o).length > 0 && Object.keys(o).every((k) => /^\d+$/.test(k));
+
+// --- баланс
+function viewBalance() {
+  const wrap = el("div"), done = new Set();
+  for (const [title, keys] of SECTIONS) {
+    const fs = el("fieldset", {}, el("legend", {}, title));
+    for (const k of keys) if (k in cfg) { fs.append(field([k])); done.add(k); }
+    wrap.append(fs);
+  }
+  const rest = Object.keys(cfg).filter((k) => !done.has(k) && !CONTENT_KEYS.has(k));
+  if (rest.length) wrap.append(el("fieldset", {}, el("legend", {}, "Прочее"), rest.map((k) => field([k]))));
+  return wrap;
+}
+
+// --- боты
+function viewBots() {
+  const b = cfg.bots, wrap = el("div");
+  wrap.append(el("fieldset", {}, el("legend", {}, "Состав"), field(["bots", "mix"])));
+  const arch = el("fieldset", {}, el("legend", {}, "Архетипы — отличия от «по умолчанию»"));
+  const defKeys = Object.keys(b.defaults);
+  for (const [name, ov] of Object.entries(b.archetypes)) {
+    const o = ov || {};
+    const chips = el("div", { class: "chips" }, Object.entries(o).map(([k, v]) => el("span", { class: "chip", title: HINTS[k] || "" }, `${k} `,
+      numInput(v, (x) => { o[k] = x; b.archetypes[name] = o; }),
+      el("button", { onclick: () => { delete o[k]; b.archetypes[name] = o; changed(); render(); } }, "×"))),
+      el("select", { onchange: (e) => { const k = e.target.value; if (k) { o[k] = b.defaults[k]; b.archetypes[name] = o; changed(); render(); } } },
+        el("option", { value: "" }, "+ параметр"), defKeys.filter((k) => !(k in o)).map((k) => el("option", { value: k }, k))));
+    arch.append(el("div", { class: "row", style: "padding:4px 0; border-bottom:1px solid var(--line)" },
+      el("input", { class: "name", value: name, style: "width:130px; min-width:0", onchange: (e) => {
+        const to = e.target.value.trim(); if (!to || to in b.archetypes) return render();
+        b.archetypes = renameKey(b.archetypes, name, to); b.mix = b.mix.map((x) => (x === name ? to : x)); changed(); render(); } }),
+      chips,
+      el("button", { class: "icon danger", title: "Удалить", onclick: () => { delete b.archetypes[name]; b.mix = b.mix.filter((x) => x !== name); changed(); render(); } }, "✕")));
+  }
+  arch.append(el("button", { onclick: () => { b.archetypes[uniqueName(b.archetypes, "новый")] = {}; changed(); render(); } }, "+ архетип"));
+  wrap.append(arch);
+  wrap.append(el("fieldset", {}, el("legend", {}, "По умолчанию"), defKeys.map((k) => field(["bots", "defaults", k]))));
+  return wrap;
+}
+
+function viewFlags() {
+  return el("fieldset", {}, el("legend", {}, "Пороги флагов «экономика рушится»"), Object.keys(cfg.flags).map((k) => field(["flags", k])));
+}
+
+// ---------------------------------------------------------------- прогон
+async function run() {
+  const btn = $("#run"); btn.disabled = true; btn.textContent = "Считаю…";
+  const t0 = performance.now();
+  try {
+    const j = await api("/api/sim", { cfg, n: +$("#simN").value || 200, seed: +$("#simSeed").value || 1 });
+    if (!j.ok) { errors = j.errors || ["ошибка"]; $("#errors").style.display = "block"; $("#errors").textContent = errors.join("\n"); status(); return; }
+    j.secs = (performance.now() - t0) / 1000;
+    j.cfgSnapshot = clone(cfg);
+    last = j; if (!base) base = j;
+    renderSim(); if (tab === "dishes") render();
+  } finally { btn.disabled = false; btn.textContent = "Запустить"; }
+}
+function delta(cur, ref, kind = "num", better = 0) {
+  if (ref == null || cur == null || last === base) return "";
+  const d = cur - ref;
+  const txt = kind === "pct" ? `${d >= 0 ? "+" : ""}${Math.round(d * 100)} п.п.` : `${d >= 0 ? "+" : ""}${f1(d)}`;
+  if (Math.abs(d) < (kind === "pct" ? 0.005 : 0.05)) return el("span", { class: "delta flat" }, "=");
+  const cls = better === 0 ? "flat" : (d > 0) === (better > 0) ? "up" : "down";
+  return el("span", { class: "delta " + cls }, txt);
+}
+function tile(label, value, cur, ref, kind, better, bad) {
+  return el("div", { class: "tile" + (bad ? " badv" : "") }, el("div", { class: "v" }, value), el("div", { class: "l" }, label), el("div", { class: "d" }, delta(cur, ref, kind, better)));
+}
+function cfgDiff(a, b, path = []) {
+  if (same(a, b)) return [];
+  if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b))
+    return [...new Set([...Object.keys(a), ...Object.keys(b)])].flatMap((k) => cfgDiff(a[k], b[k], [...path, k]));
+  return [`${path.join(".")}: ${b === undefined ? "—" : JSON.stringify(b)} → ${a === undefined ? "—" : JSON.stringify(a)}`];
+}
+function groupTable(title, cur, ref) {
+  const tb = el("tbody");
+  for (const [k, v] of Object.entries(cur)) {
+    const r = ref?.[k];
+    tb.append(el("tr", {},
+      el("td", {}, k, el("span", { class: "muted small" }, ` ×${f1(v.n)}`)),
+      el("td", { class: "num" }, f1(v.coins), " ", delta(v.coins, r?.coins, "num", 0)),
+      el("td", {}, el("div", { class: "winbar", title: `побед ${pct(v.win)}, честно ${pct(v.fair_win)}` },
+        el("i", { style: `width:${Math.min(100, v.win * 200)}%; background:${v.win > v.fair_win * cfg.flags.dominant_win_ratio ? "var(--bad)" : "var(--bar)"}` }),
+        el("b", { style: `left:${Math.min(100, v.fair_win * 200)}%` }))),
+      el("td", { class: "num" }, pct(v.win), " ", delta(v.win, r?.win, "pct", 0)),
+      el("td", { class: "num" }, f1(v.dishes)),
+      el("td", { class: "num" }, f1(v.push))));
+  }
+  return [el("h3", {}, title), el("div", { class: "scroll" }, el("table", {},
+    el("thead", {}, el("tr", {}, el("th", {}), el("th", { class: "num" }, "монеты"), el("th", {}, "победы (черта — честно)"), el("th", { class: "num" }, ""),
+      el("th", { class: "num" }, "блюд"), el("th", { class: "num" }, "втюх"))), tb))];
+}
+const SRC = [["fair", "по списку", "#d98a4a"], ["push", "втюхивание", "#b3361f"], ["buyer", "роль покупателя", "#8a9e5b"],
+  ["orders", "заказы", "#5b7f9e"], ["tender", "тендер", "#9e5b8f"], ["banquet", "банкет", "#c9a83a"]];
+function renderSim() {
+  const s = last, b = base, out = $("#simOut"), fl = cfg.flags;
+  const [lo, hi] = fl.dishes_before_fair;
+  const diff = s === b ? [] : cfgDiff(s.cfgSnapshot, b.cfgSnapshot);
+  out.replaceChildren(...[
+    el("div", { class: "row small muted" }, `${s.n} партий за ${s.secs.toFixed(1)} с.`,
+      s === b ? "Это эталон." : el("span", {}, `Сравнение с эталоном (${b.n} партий).`),
+      s !== b ? el("button", { onclick: () => { base = last; renderSim(); } }, "Закрепить как эталон") : null,
+      el("button", { id: "toBase", title: "Вернуть в редактор числа и контент эталонного прогона (в файл не пишет)",
+        disabled: same(cfg, b.cfgSnapshot), onclick: () => { cfg = clone(base.cfgSnapshot); changed(); render(); toast("Конфиг эталона в редакторе — сохраните, если нужен в файле"); } },
+        "Вернуться к эталону")),
+    diff.length ? el("details", { class: "small" }, el("summary", {}, `Отличия от эталона: ${diff.length}`), el("pre", {}, diff.join("\n"))) : null,
+    el("div", { class: "tiles" },
+      tile("флагов", s.flags.length, s.flags.length, b.flags.length, "num", -1, s.flags.length > 0),
+      tile("средние монеты", f1(s.mean_coins), s.mean_coins, b.mean_coins, "num", 0),
+      tile("у победителя", f1(s.winner_coins), s.winner_coins, b.winner_coins, "num", 0),
+      tile(`блюд к ярмарке (цель ${lo}–${hi})`, f1(s.dishes_before), s.dishes_before, b.dishes_before, "num", 0, s.dishes_before < lo || s.dishes_before > hi),
+      tile("игроков в цели по блюдам", pct(s.dishes_in_range), s.dishes_in_range, b.dishes_in_range, "pct", 1),
+      tile("спрос закрыт", pct(s.sellthrough), s.sellthrough, b.sellthrough, "pct", 0, s.sellthrough > fl.sellthrough_high || s.sellthrough < fl.sellthrough_low),
+      tile("втюхивание, доля выручки", pct(s.push_share), s.push_share, b.push_share, "pct", -1, s.push_share > fl.push_share),
+      tile("тендер пустой", pct(s.tender_empty_rate), s.tender_empty_rate, b.tender_empty_rate, "pct", -1, s.tender_empty_rate > fl.tender_empty_rate),
+      tile("заказы не выполнены", pct(s.order_fail_rate), s.order_fail_rate, b.order_fail_rate, "pct", -1, s.order_fail_rate > fl.order_fail_rate),
+      tile("цена сделки × базы", s.price_ratio.toFixed(2), s.price_ratio, b.price_ratio, "num", 0),
+      tile("не продано к концу", f1(s.dishes_left), s.dishes_left, b.dishes_left, "num", -1),
+      tile("разброс в партии", f1(s.spread), s.spread, b.spread, "num", 0)),
+    s.flags.length ? el("ul", { class: "flags" }, s.flags.map((x) => el("li", {}, x))) : el("p", { class: "up" }, "Флагов нет."),
+    el("h3", {}, "Доход (доля валового)"),
+    el("div", { class: "stack" }, SRC.map(([k, , c]) => el("span", { style: `width:${s.income_share[k] * 100}%; background:${c}`, title: `${k} ${pct(s.income_share[k])}` }))),
+    el("div", { class: "legend" }, SRC.map(([k, n, c]) => el("span", {}, el("i", { style: `background:${c}` }), `${n} ${pct(s.income_share[k])} `, delta(s.income_share[k], b.income_share[k], "pct", 0)))),
+    ...groupTable("Роли", s.by_role, b.by_role),
+    ...groupTable("Архетипы ботов", s.by_arch, b.by_arch),
+    el("h3", {}, "Склад и продажи по дням"),
+    el("div", { class: "small" }, "на складе утром: " + s.stock_by_day.map(f1).join(" → ") + ` → в конце ${f1(s.dishes_left)}`),
+    el("div", { class: "small" }, "продано порций: " + s.sold_by_day.map(f1).join(", ")),
+    el("h3", {}, "Сырьё за партию: собрано → потрачено"),
+    el("div", { class: "small" }, Object.entries(s.raw_use).map(([r, [p, c]]) => `${r} ${Math.round(p)}→${Math.round(c)}`).join("; ")),
+    el("details", {}, el("summary", {}, "Полный отчёт как в консоли"), el("pre", {}, s.report)),
+  ].filter(Boolean));
+}
+
+// ---------------------------------------------------------------- старт
+$("#save").onclick = save;
+$("#revert").onclick = () => { cfg = clone(saved); errors = []; $("#errors").style.display = "none"; render(); status(); };
+$("#run").onclick = run;
+document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); } });
+window.addEventListener("beforeunload", (e) => { if (cfg && JSON.stringify(cfg) !== savedText) e.preventDefault(); });
+load();
+</script>
+</body>
+</html>

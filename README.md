@@ -23,6 +23,7 @@
 - Попробовать квиз без настоящего контента: `set PUMPKIN_CONTENT=tests\fixtures\content` (Windows) перед запуском сервера.
 - Охота за семечками: коды — `python tools/make_seeds.py` → `content/seeds.yaml`, лист для печати — `/seeds/print`.
 - Контент: `python tools/check_content.py`. Липсинк: `python tools/make_lipsync.py`, предпросмотр — `/tools/lipsync-preview`.
+- Осенняя ярмарка (прототип экономики, консоль с ботами): `python -m fair play|watch|sim`, см. [`fair/README.md`](fair/README.md).
 - Заглушки ассетов: `python tools/make_stubs.py` (нужен ffmpeg).
 - Модель тыквы из glTF: `python tools/pack_model.py <папка со scene.gltf>` → `assets/carve/pumpkin.glb`.
 - Сторонние материалы и лицензии: [`docs/CREDITS.md`](docs/CREDITS.md).
