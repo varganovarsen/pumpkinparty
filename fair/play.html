@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Плейтест ярмарки</title>
+<style>
+:root {
+  --bg: #faf6f0; --panel: #fffdf9; --ink: #2b2118; --muted: #7a6a5a; --line: #e6dccf;
+  --accent: #c8611b; --accent-ink: #fff; --soft: #f3e9dc; --ok: #3d7a3a; --bad: #b3361f; --warn: #b07a12;
+  --me: #fff1c9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1c1814; --panel: #241f1a; --ink: #eee4d8; --muted: #a8988a; --line: #3a3229;
+    --accent: #e0803a; --accent-ink: #1c1814; --soft: #2e2720; --ok: #7fbf6f; --bad: #ef7d63; --warn: #e3b04b;
+    --me: #4a3d1c;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1c1814; --panel: #241f1a; --ink: #eee4d8; --muted: #a8988a; --line: #3a3229;
+  --accent: #e0803a; --accent-ink: #1c1814; --soft: #2e2720; --ok: #7fbf6f; --bad: #ef7d63; --warn: #e3b04b;
+  --me: #4a3d1c;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; }
+header h1 { font-size: 17px; margin: 0; }
+header .spacer { flex: 1; }
+#phase { font-weight: 600; color: var(--accent); }
+button { font: inherit; border: 1px solid var(--line); background: var(--soft); color: var(--ink); border-radius: 6px;
+  padding: 5px 10px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.big { padding: 8px 14px; text-align: left; }
+input, select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 3px 6px; }
+input[type=number] { width: 72px; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 440px); gap: 16px; padding: 16px; align-items: start; }
+@media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+.col { display: grid; gap: 16px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+.panel h2 { font-size: 15px; margin: 0 0 10px; }
+.panel h3 { font-size: 13px; margin: 12px 0 6px; color: var(--muted); font-weight: 600; }
+#prompt { border: 2px solid var(--accent); }
+#prompt.idle { border-color: var(--line); }
+#prompt .title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grid-btn { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+.grid-btn button small { display: block; color: var(--muted); font-size: 11.5px; }
+.grid-btn button.profile { border-color: var(--accent); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.me td { background: var(--me); }
+tr.dim td { opacity: .5; }
+.muted { color: var(--muted); } .small { font-size: 12px; } .ok { color: var(--ok); } .bad { color: var(--bad); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 8px; background: var(--soft); white-space: nowrap; font-size: 13px; }
+.chip.ok { border-color: var(--ok); }
+.coins { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#log { max-height: 520px; overflow: auto; font-size: 13px; font-variant-numeric: tabular-nums; }
+#log div { padding: 1px 0; white-space: pre-wrap; }
+#log .h1 { font-weight: 700; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
+#log .h2 { font-weight: 600; color: var(--accent); margin-top: 6px; }
+#log .me { background: var(--me); border-radius: 4px; padding: 2px 6px; }
+#log .detail { color: var(--muted); font-size: 12px; padding-left: 12px; }
+#log.nodetail .detail { display: none; }
+.err { background: color-mix(in srgb, var(--bad) 12%, var(--panel)); border: 1px solid var(--bad); color: var(--bad);
+  border-radius: 8px; padding: 8px 12px; white-space: pre-wrap; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+.items-row { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
+details summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Плейтест ярмарки</h1>
+  <span id="phase" class="small"></span>
+  <span class="spacer"></span>
+  <label class="small">Роль <select id="new-role"><option value="">случайная</option></select></label>
+  <label class="small">Сид <input id="new-seed" type="number" placeholder="случ." style="width:90px"></label>
+  <label class="small">Игроков <input id="new-players" type="number" min="2" placeholder="конф." style="width:64px"></label>
+  <button class="primary" id="new-btn">Новая партия</button>
+</header>
+<main>
+  <div class="col">
+    <section class="panel" id="prompt"></section>
+    <section class="panel">
+      <div class="row" style="justify-content: space-between; margin-bottom: 6px">
+        <h2 style="margin:0">Журнал</h2>
+        <label class="small"><input type="checkbox" id="show-detail"> сделки ботов</label>
+      </div>
+      <div id="log" class="nodetail"></div>
+    </section>
+  </div>
+  <div class="col">
+    <section class="panel" id="me" hidden></section>
+    <section class="panel" id="side-panel" hidden>
+      <div class="tabs" id="side-tabs"></div>
+      <div id="side"></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const chips = obj => Object.keys(obj || {}).length
+  ? `<div class="chips">${Object.entries(obj).map(([k, v]) => `<span class="chip">${esc(k)} ${v}</span>`).join("")}</div>`
+  : `<span class="muted">—</span>`;
+const pct = x => Math.round(x * 100) + "%";
+
+let st = { version: -1, seed: null, log_total: 0, prompt: null, snap: null };
+let logCount = 0, sideTab = "economy", busy = false;
+try { sideTab = localStorage.getItem("fair-side-tab") || sideTab; } catch (e) {}
+
+async function api(url, body) {
+  const r = await fetch(url, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  return r.json();
+}
+
+// ---------------------------------------------------------------- опрос
+async function poll() {
+  while (true) {
+    try {
+      let s = await api(`/api/state?version=${st.version}&seed=${st.seed ?? ""}&since=${logCount}`);
+      if (s.seed !== st.seed) {   // новая партия — журнал с начала
+        logCount = 0; $("#log").innerHTML = "";
+        s = await api("/api/state?since=0");
+      }
+      apply(s);
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+}
+
+function apply(s) {
+  const promptChanged = (s.prompt && s.prompt.id) !== (st.prompt && st.prompt.id) || s.over !== st.over || s.seed !== st.seed;
+  appendLog(s.log);
+  st = s;
+  if (s.snap) { $("#me").hidden = $("#side-panel").hidden = false; renderMe(); renderSide(); renderPhase(); }
+  if (promptChanged) renderPrompt();
+}
+
+function appendLog(entries) {
+  const box = $("#log");
+  const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  for (const e of entries || []) {
+    const d = document.createElement("div");
+    d.className = e.kind;
+    d.textContent = e.kind === "detail" ? "· " + e.text : e.text;
+    if (e.kind === "info" && /(^|\s)Вы[\s(:]/.test(e.text)) d.className = "me";
+    box.appendChild(d);
+    logCount++;
+  }
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+
+async function answer(value) {
+  if (!st.prompt || busy) return;
+  busy = true;
+  const id = st.prompt.id;
+  $("#prompt").querySelectorAll("button,input,select").forEach(el => el.disabled = true);
+  try { await api("/api/answer", { id, value }); } finally { busy = false; }
+}
+
+// ---------------------------------------------------------------- шапка и сводка
+function renderPhase() {
+  const s = st.snap;
+  let t = s.phase === "prep" ? `Подготовка · неделя ${s.week}/${s.weeks}`
+        : s.phase === "fair" ? `Ярмарка · день ${s.day}/${s.fair_days}` : "После ярмарки";
+  if (s.weather) t += ` · сегодня дороже: ${s.weather}`;
+  if (st.over) t = "Партия окончена";
+  $("#phase").textContent = `#${st.seed} · ${t}`;
+}
+
+function renderMe() {
+  const m = st.snap.me;
+  $("#me").innerHTML = `
+    <div class="row" style="justify-content: space-between">
+      <h2 style="margin:0">${esc(m.name)} — ${esc(m.role)}</h2>
+      <span class="coins">${m.coins} <span class="small muted">мон.</span></span>
+    </div>
+    <div class="small muted">Профиль: ${m.profile.map(esc).join(", ")}</div>
+    <h3>Сырьё</h3>${chips(m.raws)}
+    <h3>Блюда</h3>${chips(m.dishes)}
+    <h3>Заказы <span class="small">(штраф за невыполнение ${pct(st.snap.penalty)})</span></h3>
+    ${m.orders.length ? m.orders.map(o => `<div class="small ${o.can ? "ok" : ""}">${o.can ? "✓ " : ""}${esc(o.text)}</div>`).join("") : `<span class="muted">—</span>`}`;
+}
+
+const SIDE = { economy: "Экономика", recipes: "Рецепты", raws: "Сырьё" };
+function renderSide() {
+  $("#side-tabs").innerHTML = Object.entries(SIDE).map(([k, v]) =>
+    `<button data-tab="${k}" class="${k === sideTab ? "on" : ""}">${v}</button>`).join("");
+  $("#side-tabs").querySelectorAll("button").forEach(b => b.onclick = () => {
+    sideTab = b.dataset.tab; try { localStorage.setItem("fair-side-tab", sideTab); } catch (e) {} renderSide(); });
+  const s = st.snap;
+  let h = "";
+  if (sideTab === "economy") {
+    h += `<div class="scroll"><table><tr><th>игрок</th><th>бот</th><th class="num">монеты</th><th class="num">сырьё</th><th class="num">блюда</th><th class="num">заказы</th></tr>`;
+    h += s.players.map(p => `<tr class="${p.me ? "me" : ""}"><td>${esc(p.label)}</td><td class="small muted">${esc(p.arch)}</td>
+      <td class="num">${p.coins}</td><td class="num">${p.raws}</td><td class="num">${p.dishes}</td><td class="num">${p.orders}</td></tr>`).join("");
+    h += `</table></div>`;
+    if (s.rumors.length) h += `<h3>Слухи</h3>` + s.rumors.map(r => `<div class="small">• ${esc(r)}</div>`).join("");
+    if (Object.keys(s.market_prices).length) h += `<h3>Цены этого рынка</h3>${chips(s.market_prices)}`;
+    if (Object.keys(s.game_prices).length) h += `<h3>Средние цены за партию</h3>${chips(s.game_prices)}`;
+    if (s.fair) h += `<h3>Ярмарка</h3><div class="small">продано ${s.fair.sold} из ${s.fair.demand} в списках,
+      втюхиваний ${s.fair.push_ok}/${s.fair.push_tries}, на складах ${s.fair.stock}</div>`;
+    h += `<div class="small muted" style="margin-top:8px">Колода заказов: ${s.order_deck} карт</div>`;
+  } else if (sideTab === "recipes") {
+    h += `<div class="scroll"><table><tr><th>блюдо</th><th>кат.</th><th class="num">база</th><th class="num">сырьё</th><th class="num">д.</th><th>состав</th></tr>`;
+    h += s.dishes.map(d => `<tr class="${d.can ? "" : "dim"}"><td>${d.can ? "✓ " : ""}${esc(d.name)}</td><td class="small">${esc(d.category)}</td>
+      <td class="num">${d.base}</td><td class="num">${d.raw_cost}</td><td class="num">${d.cost}</td>
+      <td class="small">${Object.entries(d.ingredients).map(([r, q]) => `${esc(r)} ${q}`).join(", ")}</td></tr>`).join("");
+    h += `</table></div><div class="small muted">«сырьё» — стоимость сырья по базе, «д.» — действий на готовку для вас</div>`;
+  } else {
+    h += `<table><tr><th>сырьё</th><th class="num">база</th><th class="num">сбор</th></tr>`;
+    h += s.raws.map(r => `<tr class="${r.profile ? "me" : ""}"><td>${esc(r.name)}</td><td class="num">${r.base}</td><td class="num">+${r.gain}</td></tr>`).join("");
+    h += `</table>`;
+  }
+  $("#side").innerHTML = h;
+}
+
+// ---------------------------------------------------------------- вопросы
+function itemNames() {
+  return [...st.snap.raws.map(r => r.name), ...st.snap.dishes.map(d => d.name)];
+}
+
+function renderPrompt() {
+  const el = $("#prompt");
+  const p = st.prompt;
+  el.className = "panel" + (p ? "" : " idle");
+  if (st.error) { el.innerHTML = `<div class="err">Ошибка движка: ${esc(st.error)}</div>`; return; }
+  if (st.over && st.snap && st.snap.final) return renderFinal(el);
+  if (!p) {
+    if (st.seed == null) el.innerHTML = `<div class="muted">Нажмите «Новая партия».</div>`;
+    else el.querySelectorAll("button,input,select").forEach(x => x.disabled = true);   // ждём следующий вопрос
+    return;
+  }
+  const fn = PROMPTS[p.kind];
+  el.innerHTML = "";
+  fn(el, p, st.snap);
+  const first = el.querySelector("input[autofocus]");
+  if (first) first.focus();
+}
+
+function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
+function on(root, sel, fn) { root.querySelectorAll(sel).forEach(b => b.onclick = () => fn(b)); }
+function num(input) { const v = parseInt(input.value, 10); return Number.isFinite(v) && v > 0 ? v : null; }
+
+const PROMPTS = {
+  action(el, p, s) {
+    el.append(h(`<div class="title">Неделя ${s.week}/${s.weeks} · работа · действий ${p.left} из ${s.actions}</div>
+      <h3>Собрать</h3>
+      <div class="grid-btn">${s.raws.map(r => `<button class="big ${r.profile ? "profile" : ""}" data-raw="${esc(r.name)}">${esc(r.name)} +${r.gain}<small>база ${r.base}${r.profile ? " · профиль" : ""}</small></button>`).join("")}</div>
+      <h3>Приготовить</h3>
+      <div class="grid-btn">${s.dishes.map(d => `<button class="big" data-dish="${esc(d.name)}" ${d.can && d.cost <= p.left ? "" : "disabled"}>${esc(d.name)}<small>${d.cost} д. · база ${d.base} · ${Object.entries(d.ingredients).map(([r, q]) => `${esc(r)} ${q}`).join(", ")}</small></button>`).join("")}</div>
+      <h3>Заказы</h3>
+      <div class="row">
+        <button data-op="order" ${s.order_deck ? "" : "disabled"}>Взять заказ (1 д.)</button>
+        ${s.me.orders.filter(o => o.can).map(o => `<button data-fulfill="${o.id}">Выполнить: ${esc(o.text)}</button>`).join("")}
+      </div>
+      <h3></h3>
+      <div class="row"><button id="end-week">Закончить неделю${p.left ? ` (сгорит ${p.left} д.)` : ""}</button></div>`));
+    on(el, "[data-raw]", b => answer({ op: "gather", raw: b.dataset.raw }));
+    on(el, "[data-dish]", b => answer({ op: "cook", dish: b.dataset.dish }));
+    on(el, "[data-op=order]", () => answer({ op: "order" }));
+    on(el, "[data-fulfill]", b => answer({ op: "fulfill", order: +b.dataset.fulfill }));
+    let armed = false;
+    on(el, "#end-week", b => {
+      if (p.left && !armed) { armed = true; b.textContent = `Точно сжечь ${p.left} д.? Нажмите ещё раз`; b.classList.add("primary"); return; }
+      answer({ op: "end" });
+    });
+  },
+
+  choose_order(el, p, s) {
+    el.append(h(`<div class="title">Возьмите заказ</div>
+      <div class="small muted" style="margin-bottom:8px">Штраф за невыполнение — ${pct(s.penalty)} стоимости.</div>
+      <div class="grid-btn">${p.cards.map((c, i) => `<button class="big" data-i="${i}">${c.value} мон.<small>${Object.entries(c.items).map(([d, q]) => `${esc(d)} ×${q}`).join("<br>")}</small></button>`).join("")}</div>`));
+    on(el, "[data-i]", b => answer(+b.dataset.i));
+  },
+
+  market(el, p, s) {
+    const title = s.phase === "prep" ? `Рынок недели ${s.week}` : s.phase === "fair" ? `Торг после дня ${s.day}` : "Послеярмарочный рынок";
+    const book = [...p.book].sort((a, b) => a.item.localeCompare(b.item) || a.side.localeCompare(b.side) || a.price - b.price);
+    const names = itemNames();
+    const have = item => (s.me.raws[item] || 0) + (s.me.dishes[item] || 0);
+    const room = o => o.side === "buy" ? Math.min(o.qty, have(o.item)) : Math.min(o.qty, Math.floor(s.me.coins / o.price));
+    el.append(h(`<div class="row" style="justify-content: space-between">
+        <div class="title">${title}</div>
+        <div class="row"><button id="wait">Подождать раунд</button><button class="primary" id="ready">Готов — закончить рынок</button></div>
+      </div>
+      <div class="small muted">«Подождать» — боты переставят заявки, ваши останутся.</div>
+      ${s.phase === "prep" && !s.can_cook_later ? `<div class="small bad">Готовить больше нельзя — сырьё обесценится.</div>` : ""}
+      <h3>Стакан заявок</h3>
+      ${book.length ? `<div class="scroll" style="max-height: 340px; overflow-y: auto"><table><tr><th>кто</th><th></th><th>товар</th><th class="num">шт.</th><th class="num">цена</th><th></th></tr>
+        ${book.map(o => `<tr class="${o.mine ? "me" : ""}"><td>${esc(o.label)}</td><td class="small">${o.side === "buy" ? "покупает" : "продаёт"}</td>
+          <td>${esc(o.item)}</td><td class="num">${o.qty}</td><td class="num">${o.price}</td>
+          <td>${o.mine ? "" : `<span class="row" style="flex-wrap:nowrap"><input type="number" min="1" max="${Math.max(1, room(o))}" value="1" data-q="${o.i}" style="width:56px" ${room(o) ? "" : "disabled"}>
+            <button data-hit="${o.i}" ${room(o) ? "" : "disabled"} title="${room(o) ? "" : o.side === "buy" ? "нет товара" : "не хватает денег"}">${o.side === "buy" ? "Продать" : "Купить"}</button></span>`}</td></tr>`).join("")}
+        </table></div>` : `<div class="muted">Заявок нет.</div>`}
+      <h3>Выставить заявку</h3>
+      <div class="row">
+        <select id="pl-side"><option value="buy">Куплю</option><option value="sell">Продам</option></select>
+        <select id="pl-item">${names.map(n => `<option>${esc(n)}</option>`).join("")}</select>
+        <input id="pl-qty" type="number" min="1" value="1" title="штук"> шт. по
+        <input id="pl-price" type="number" min="1" placeholder="цена"> мон.
+        <button id="pl-go">Выставить</button>
+        ${p.book.some(o => o.mine) ? `<button id="cancel">Снять мои заявки</button>` : ""}
+      </div>
+      <h3>Предложить сделку боту</h3>
+      <div id="deal"></div>
+      ${s.me.orders.some(o => o.can) ? `<h3>Заказы</h3><div class="row">${s.me.orders.filter(o => o.can).map(o => `<button data-fulfill="${o.id}">Выполнить: ${esc(o.text)}</button>`).join("")}</div>` : ""}
+`));
+    on(el, "[data-hit]", b => { const q = num(el.querySelector(`[data-q="${b.dataset.hit}"]`)); if (q) answer({ op: "hit", order: +b.dataset.hit, qty: q }); });
+    on(el, "#pl-go", () => {
+      const qty = num($("#pl-qty")), price = num($("#pl-price"));
+      if (!qty || !price) { $("#pl-price").focus(); return; }
+      answer({ op: "place", side: $("#pl-side").value, item: $("#pl-item").value, qty, price });
+    });
+    on(el, "#cancel", () => answer({ op: "cancel" }));
+    on(el, "[data-fulfill]", b => answer({ op: "fulfill", order: +b.dataset.fulfill }));
+    on(el, "#wait", () => answer({ op: "wait" }));
+    on(el, "#ready", () => answer({ op: "ready" }));
+    dealForm(el.querySelector("#deal"), p, names);
+  },
+
+  seller_prices(el, p, s) {
+    el.append(h(`<div class="title">Покупатель ${esc(p.buyer)} у вашего стенда · остановка ${p.stop}/${p.stops}</div>
+      ${p.weather ? `<div class="small">Сегодня дороже: ${esc(p.weather)}</div>` : ""}
+      <div class="small muted" style="margin-bottom:6px">Максимумы покупателя скрыты. Цена выше максимума — отказ (он может назвать встречную).</div>
+      <table><tr><th>блюдо</th><th class="num">нужно</th><th>кат.</th><th class="num">база</th><th class="num">у вас</th><th>цена</th></tr>
+      ${p.positions.map(x => `<tr class="${x.have ? "" : "dim"}"><td>${esc(x.dish)}</td><td class="num">${x.qty}</td><td class="small">${esc(x.category)}</td>
+        <td class="num">${x.base}</td><td class="num">${x.have}</td>
+        <td>${x.have ? `<input type="number" min="1" data-i="${x.i}" placeholder="—"> <button class="small" data-fill="${x.i}" data-v="${x.base}">база</button>` : "нет"}</td></tr>`).join("")}
+      </table>
+      <div class="row" style="margin-top:10px"><button class="primary" id="go">Назвать цены</button><button id="skip">Ничего не продавать</button></div>`));
+    on(el, "[data-fill]", b => { el.querySelector(`input[data-i="${b.dataset.fill}"]`).value = b.dataset.v; });
+    const go = () => { const v = {}; el.querySelectorAll("input[data-i]").forEach(i => { const n = num(i); if (n) v[i.dataset.i] = n; }); answer(v); };
+    on(el, "#go", go);
+    on(el, "#skip", () => answer({}));
+    el.querySelectorAll("input").forEach(i => i.onkeydown = e => { if (e.key === "Enter") go(); });
+  },
+
+  yesno(el, p) {
+    el.append(h(`<div class="title">${esc(p.text)}</div>
+      <div class="row"><button class="primary" id="y">Да</button><button id="n">Нет</button></div>`));
+    on(el, "#y", () => answer(true));
+    on(el, "#n", () => answer(false));
+  },
+
+  seller_push(el, p) {
+    el.append(h(`<div class="title">Втюхать ${esc(p.buyer)} блюдо не из списка?</div>
+      <div class="small">${p.wanted.length ? `Ещё ищет: ${p.wanted.map(esc).join(", ")} — этого у вас нет.` : "Его список закрыт."}</div>
+      <div class="small muted" style="margin-bottom:6px">Сработает, только если категория — тайная слабость покупателя.</div>
+      <div class="row">
+        <select id="d">${p.candidates.map(c => `<option value="${esc(c.dish)}" data-base="${c.base}">${esc(c.dish)} (${esc(c.category)}, база ${c.base})</option>`).join("")}</select>
+        <input type="number" id="pr" min="1" placeholder="цена"> <button class="primary" id="go">Втюхать</button>
+        <button id="skip">Не втюхивать</button>
+      </div>`));
+    const sel = el.querySelector("#d"), pr = el.querySelector("#pr");
+    pr.value = sel.selectedOptions[0].dataset.base;
+    sel.onchange = () => pr.value = sel.selectedOptions[0].dataset.base;
+    on(el, "#go", () => { const v = num(pr); if (v) answer({ dish: sel.value, price: v }); });
+    on(el, "#skip", () => answer(null));
+  },
+
+  buyer_respond(el, p) {
+    const c = p.card;
+    const pos = Object.fromEntries(c.positions.map(x => [x.i, x]));
+    el.append(h(`<div class="title">Вы покупатель у стенда ${esc(p.seller)} · остановка ${p.stop}/${p.stops}</div>
+      ${cardHtml(c)}
+      <h3>Предложения продавца</h3>
+      <table><tr><th>блюдо</th><th class="num">цена</th><th class="num">ваш макс</th><th class="num">выгода</th><th>купить</th></tr>
+      ${p.offers.map(o => { const x = pos[o.i]; const over = o.price > x.max;
+        return `<tr><td>${esc(x.dish)} ×${x.qty}</td><td class="num">${o.price}</td><td class="num">${x.max}</td>
+          <td class="num ${over ? "bad" : "ok"}">${over ? "выше макс." : x.max - o.price}</td>
+          <td><input type="checkbox" data-acc="${o.i}" ${over ? "disabled" : "checked"}></td></tr>`; }).join("")}
+      </table>
+      <h3>Встречная цена (одна за остановку)</h3>
+      <div class="row"><select id="cp-i"><option value="">не надо</option>${p.offers.map(o => `<option value="${o.i}">${esc(pos[o.i].dish)} (предл. ${o.price}, макс ${pos[o.i].max})</option>`).join("")}</select>
+        <input type="number" id="cp" min="1" placeholder="цена"></div>
+      <div class="row" style="margin-top:10px"><button class="primary" id="go">Ответить</button></div>`));
+    const sel = el.querySelector("#cp-i");
+    sel.onchange = () => { if (sel.value) { const cb = el.querySelector(`[data-acc="${sel.value}"]`); cb.checked = false; el.querySelector("#cp").max = pos[sel.value].max; } };
+    on(el, "#go", () => {
+      const accept = [...el.querySelectorAll("[data-acc]:checked")].map(i => +i.dataset.acc);
+      let counter = null;
+      if (sel.value && num(el.querySelector("#cp")) && !accept.includes(+sel.value))
+        counter = [+sel.value, Math.min(num(el.querySelector("#cp")), pos[sel.value].max)];
+      answer({ accept, counter });
+    });
+  },
+
+  push_counter(el, p) {
+    el.append(h(`<div class="title">${esc(p.seller)} втюхивает «${esc(p.dish)}» за ${p.price}</div>
+      <div class="small">Это ваша слабость, но цена выше максимума ${p.max}.</div>
+      <div class="row" style="margin-top:8px"><input type="number" id="v" min="1" max="${p.max}" value="${p.max}" autofocus>
+        <button class="primary" id="go">Встречная</button><button id="no">Отказ</button></div>`));
+    on(el, "#go", () => { const v = num(el.querySelector("#v")); if (v) answer(Math.min(v, p.max)); });
+    on(el, "#no", () => answer(null));
+  },
+
+  tender(el, p) {
+    el.append(h(`<div class="title">Тендер: ${p.count} × «${esc(p.dish)}»</div>
+      <div class="small">Текущая цена ${p.price} за штуку (база ${p.base}). ${p.first ? "Можно согласиться на стартовую." : "Нужно сбить цену."}</div>
+      <div class="row" style="margin-top:8px"><input type="number" id="v" min="1" max="${p.max_bid}" value="${p.max_bid}" autofocus> ≤ ${p.max_bid}
+        <button class="primary" id="go">Ставка</button><button id="no">Пас</button></div>`));
+    on(el, "#go", () => { const v = num(el.querySelector("#v")); if (v && v <= p.max_bid) answer(v); });
+    on(el, "#no", () => answer(null));
+  },
+
+  banquet(el, p) {
+    const top = [...p.dishes].sort((a, b) => b.base - a.base).slice(0, p.max).map(d => d.dish);
+    el.append(h(`<div class="title">Банкет: соберите набор разных блюд (до ${p.max})</div>
+      <div class="small muted">Побеждает самый большой набор (при равенстве — дороже). Победитель продаёт его по базе +${p.bonus}%, остальным блюда возвращаются.</div>
+      <div style="margin:8px 0">${p.dishes.map(d => `<label style="display:block"><input type="checkbox" data-d="${esc(d.dish)}" ${top.includes(d.dish) ? "checked" : ""}> ${esc(d.dish)} (база ${d.base})</label>`).join("")}</div>
+      <div class="row"><span class="small" id="cnt"></span><button class="primary" id="go">Подать</button><button id="no">Не участвовать</button></div>`));
+    const upd = () => { const n = el.querySelectorAll("[data-d]:checked").length; el.querySelector("#cnt").textContent = `выбрано ${n}/${p.max}`; el.querySelector("#go").disabled = n > p.max; };
+    el.querySelectorAll("[data-d]").forEach(c => c.onchange = upd); upd();
+    on(el, "#go", () => answer([...el.querySelectorAll("[data-d]:checked")].map(c => c.dataset.d)));
+    on(el, "#no", () => answer([]));
+  },
+};
+
+function cardHtml(c) {
+  return `<div class="card small">Ваша карточка: слабость — <b>${esc(c.weakness)}</b> (до ×${c.weak_mult} базы${c.boost ? `, сегодня ${esc(c.boost)} ещё +${c.boost_pct}%` : ""})<br>
+    ${c.positions.map(x => `${esc(x.dish)} ×${x.qty}: максимум ${x.max} (база ${x.base})`).join("<br>")}</div>`;
+}
+
+function dealForm(box, p, names) {
+  const opts = ["монеты", ...names];
+  box.innerHTML = `<div class="row"><select id="bot">${p.bots.map(b => `<option value="${b.idx}">${esc(b.label)} — ${b.coins} мон.</option>`).join("")}</select></div>
+    <div id="bot-inv" class="small" style="margin:4px 0"></div>
+    <div class="row" style="align-items:flex-start; gap:24px">
+      <div><div class="small muted">Вы отдаёте</div><div id="give"></div><button class="small" data-add="give">+ строка</button></div>
+      <div><div class="small muted">Вы получаете</div><div id="get"></div><button class="small" data-add="get">+ строка</button></div>
+    </div>
+    <div class="row" style="margin-top:6px"><button id="deal-go">Предложить</button></div>`;
+  const row = side => {
+    const d = document.createElement("div"); d.className = "items-row";
+    d.innerHTML = `<select>${opts.map(o => `<option>${esc(o)}</option>`).join("")}</select><input type="number" min="1" value="1" style="width:60px"><button class="small" title="убрать">×</button>`;
+    d.querySelector("button").onclick = () => d.remove();
+    box.querySelector("#" + side).appendChild(d);
+  };
+  const inv = () => { const b = p.bots.find(b => b.idx == box.querySelector("#bot").value);
+    box.querySelector("#bot-inv").innerHTML = `сырьё: ${Object.entries(b.raws).map(([k, v]) => `${esc(k)} ${v}`).join(", ") || "—"}<br>блюда: ${Object.entries(b.dishes).map(([k, v]) => `${esc(k)} ${v}`).join(", ") || "—"}`; };
+  box.querySelector("#bot").onchange = inv; inv();
+  row("give"); row("get");
+  on(box, "[data-add]", b => row(b.dataset.add));
+  const collect = side => { const o = {}; box.querySelectorAll(`#${side} .items-row`).forEach(r => {
+    const q = num(r.querySelector("input")); if (q) { const k = r.querySelector("select").value; o[k] = (o[k] || 0) + q; } }); return o; };
+  on(box, "#deal-go", () => {
+    const give = collect("give"), get = collect("get");
+    if (!Object.keys(give).length && !Object.keys(get).length) return;
+    answer({ op: "propose", bot: +box.querySelector("#bot").value, give, get });
+  });
+}
+
+const INCOME = { fair: "ярмарка", push: "втюхивание", buyer: "выгода покупателя", orders: "заказы", tender: "тендер",
+  banquet: "банкет", market_in: "рынок", market_out: "рынок", penalty: "штрафы" };
+
+function renderFinal(el) {
+  const f = st.snap.final;
+  const place = f.findIndex(r => r.me) + 1;
+  el.className = "panel";
+  el.innerHTML = `<div class="title">Итог: вы ${place}-й из ${f.length}</div>
+    <div class="scroll"><table><tr><th>#</th><th>игрок</th><th>бот</th><th class="num">монеты</th><th>доходы и расходы</th></tr>
+    ${f.map((r, i) => `<tr class="${r.me ? "me" : ""}"><td>${i + 1}</td><td>${esc(r.label)}</td><td class="small muted">${esc(r.arch)}</td>
+      <td class="num"><b>${r.coins}</b></td><td class="small">${Object.entries(r.income).map(([k, v]) =>
+        ["penalty", "market_out"].includes(k) ? `${INCOME[k] || k} −${v}` : `${INCOME[k] || k} +${v}`).join(", ")}</td></tr>`).join("")}
+    </table></div>
+    <div class="row" style="margin-top:10px"><button class="primary" id="again">Ещё партию</button>
+      <button id="replay">Переиграть сид ${st.seed}</button></div>`;
+  on(el, "#again", () => newGame(null));
+  on(el, "#replay", () => newGame(st.seed));
+}
+
+// ---------------------------------------------------------------- новая партия
+async function newGame(seed) {   // seed: undefined — из поля, null — случайный
+  if (seed === undefined) seed = $("#new-seed").value || null;
+  const r = await api("/api/new", { role: $("#new-role").value, players: $("#new-players").value || null, seed });
+  if (r.errors) $("#prompt").innerHTML = `<div class="err">${esc(r.errors.join("\n"))}</div>`;
+}
+
+$("#new-btn").onclick = () => newGame(undefined);
+$("#show-detail").onchange = e => $("#log").classList.toggle("nodetail", !e.target.checked);
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.tagName !== "INPUT" && e.target.tagName !== "BUTTON") {
+    const b = $("#prompt button.primary"); if (b && !b.disabled) b.click();
+  }
+});
+
+(async () => {
+  const meta = await api("/api/meta");
+  $("#new-role").innerHTML += meta.roles.map(r => `<option ${r === meta.role ? "selected" : ""}>${esc(r)}</option>`).join("");
+  if (meta.seed != null) $("#new-seed").value = meta.seed;
+  renderPrompt();
+  poll();
+})();
+</script>
+</body>
+</html>

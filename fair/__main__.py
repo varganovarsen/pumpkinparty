@@ -4,6 +4,7 @@
     python -m fair watch [--seed 7] [--brief]                     смотреть партию ботов
     python -m fair sim   [-n 300] [--sweep buyers_per_player=0.7,1.0] [--csv out.csv]
     python -m fair edit  [--port 8765]                            редактор конфига в браузере
+    python -m fair web   [--port 8766] [--role Повар] [--seed 7]  играть против ботов в браузере
 
 Общие: --config путь, --set ключ=значение (сколько угодно), --players N, --mix balanced,late,...
 """
@@ -26,7 +27,7 @@ def main(argv=None):
         except Exception:
             pass
     ap = argparse.ArgumentParser(prog="python -m fair", description="Осенняя ярмарка — консольный прототип")
-    ap.add_argument("mode", choices=["play", "watch", "sim", "edit"])
+    ap.add_argument("mode", choices=["play", "watch", "sim", "edit", "web"])
     ap.add_argument("--config")
     ap.add_argument("--set", action="append", default=[], metavar="КЛЮЧ=ЗНАЧЕНИЕ")
     ap.add_argument("--players", type=int)
@@ -39,13 +40,13 @@ def main(argv=None):
     ap.add_argument("--sweep", action="append", default=[], metavar="КЛЮЧ=v1,v2")
     ap.add_argument("--csv", help="sim: дописать построчно игроков всех партий в CSV")
     ap.add_argument("--report", action="store_true", help="sim со --sweep: полная сводка по каждому сочетанию")
-    ap.add_argument("--port", type=int, default=8765, help="edit: порт")
-    ap.add_argument("--no-browser", action="store_true", help="edit: не открывать браузер")
+    ap.add_argument("--port", type=int, help="edit/web: порт (8765 / 8766)")
+    ap.add_argument("--no-browser", action="store_true", help="edit/web: не открывать браузер")
     a = ap.parse_args(argv)
 
     if a.mode == "edit":
         from .editor import serve
-        serve(a.config, a.port, not a.no_browser)
+        serve(a.config, a.port or 8765, not a.no_browser)
         return
 
     overrides = list(a.set)
@@ -53,6 +54,11 @@ def main(argv=None):
         overrides.append(f"players={a.players}")
     if a.mix:
         overrides.append(f"bots.mix=[{a.mix}]")
+    if a.mode == "web":
+        from .play import serve
+        config.load(a.config, overrides)   # ошибки в --set — сразу, а не на первой партии
+        serve(a.config, overrides, a.port or 8766, not a.no_browser, a.role, a.seed)
+        return
     cfg = config.load(a.config, overrides)
     seed = a.seed if a.seed is not None else random.randrange(1_000_000)
 

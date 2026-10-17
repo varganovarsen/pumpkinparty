@@ -176,3 +176,81 @@ def test_editor_validate_and_sim(cfg):
     assert "тыква" in editor.validate(bad)[0]
     out = editor.simulate(_through_browser(cfg), 5, 1)
     assert out["n"] == 5 and set(out["by_role"]) == set(cfg["roles"]) and "Партий: 5" in out["report"]
+
+
+def test_web_plays_full_game():
+    """Скриптовый игрок через HTTP проходит партию в браузерном режиме: все экраны, без ошибок движка."""
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+
+    from fair import play
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), play.make_handler(play.Host(None, ["players=6"], "Повар", None)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def call(path, body=None):
+        data = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(url + path, data, {"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read())
+
+    assert "Повар" in call("/api/meta")["roles"]
+    call("/api/new", {"seed": 5, "role": "Повар"})
+    seen, gathered, version, market_ops = set(), 0, -1, 0
+    for _ in range(5000):
+        s = call(f"/api/state?version={version}&seed=5")
+        version = s["version"]
+        assert not s["error"], s["error"]
+        if s["over"]:
+            break
+        p, snap = s["prompt"], s["snap"]
+        if not p:
+            continue
+        seen.add(p["kind"])
+        k = p["kind"]
+        if k == "action":
+            cook = next((d["name"] for d in snap["dishes"] if d["can"] and d["cost"] <= p["left"]), None)
+            if cook:
+                v = {"op": "cook", "dish": cook}
+            else:
+                raws = [r["name"] for r in snap["raws"]]
+                v = {"op": "gather", "raw": raws[gathered % len(raws)]}
+                gathered += 1
+        elif k == "choose_order":
+            v = 0
+        elif k == "market":
+            market_ops += 1
+            others = [o for o in p["book"] if not o["mine"]]
+            if market_ops % 4 == 1 and others:
+                v = {"op": "hit", "order": others[0]["i"], "qty": 1}
+            elif market_ops % 4 == 2:
+                v = {"op": "propose", "bot": p["bots"][0]["idx"], "give": {"монеты": 1}, "get": {}}
+            elif market_ops % 4 == 3:
+                v = {"op": "place", "side": "buy", "item": snap["raws"][0]["name"], "qty": 1, "price": 1}
+            else:
+                v = {"op": "ready"}
+        elif k == "seller_prices":
+            v = {str(x["i"]): x["base"] for x in p["positions"] if x["have"]}
+        elif k == "buyer_respond":
+            pos = {x["i"]: x for x in p["card"]["positions"]}
+            v = {"accept": [o["i"] for o in p["offers"] if o["price"] <= pos[o["i"]]["max"]], "counter": None}
+        elif k == "seller_push":
+            c = p["candidates"][0]
+            v = {"dish": c["dish"], "price": c["base"]}
+        elif k in ("tender", "push_counter"):
+            v = None
+        elif k == "banquet":
+            v = [d["dish"] for d in p["dishes"]][:p["max"]]
+        else:
+            v = True
+        call("/api/answer", {"id": p["id"], "value": v})
+    else:
+        raise AssertionError("партия не закончилась")
+    assert {"action", "market", "seller_prices"} <= seen
+    final = s["snap"]["final"]
+    assert len(final) == 6 and sum(r["me"] for r in final) == 1
+    assert any("Ваш счёт" in e["text"] for e in call("/api/state?since=0")["log"])
+    srv.shutdown()
