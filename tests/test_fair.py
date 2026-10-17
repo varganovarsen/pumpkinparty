@@ -112,6 +112,14 @@ def test_human_plays_full_game(cfg, monkeypatch):
     assert g.stats.income[0]["fair"] > 0
 
 
+@pytest.mark.parametrize("players", [6, 10, 12])
+def test_balance_has_no_flags(cfg, players):
+    """Страж баланса: правка config.yaml не должна зажигать флаги «экономика рушится». ~2 с на состав."""
+    cfg["players"] = players
+    s = Summary(run_many(cfg, 300, seed=1), cfg)
+    assert s.flags == []
+
+
 def test_bad_qty_weights_rejected(cfg):
     # YAML читает {1:1.0} без пробела как число 61.0 — конфиг должен сказать об этом внятно
     with pytest.raises(ValueError, match="qty_weights"):
