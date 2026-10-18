@@ -23,6 +23,13 @@ seeds:                         # охота за семечками, коды в
   wrong_limit: 3               # неверных кодов подряд до паузы
   cooldown_seconds: 10
   host_can_play: false         # ведущий прятал, поэтому не ищет
+bomb:                          # игра «Бомба», темы в content/bomb.yaml
+  rounds: 3
+  start_seconds: 5             # время на ход в первом круге; ведущий меняет в /host
+  step_seconds: 1              # на столько короче каждый следующий круг
+  min_seconds: 2               # но не меньше
+  points: [500, 400, 300, 200, 100]  # 1-5 места раунда
+  host_can_play: true
 head:
   mode: quiet                  # quiet | loud
   interval_minutes: 6

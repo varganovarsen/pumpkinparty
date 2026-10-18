@@ -1,0 +1,52 @@
+/* Пульт песочницы поверх настоящего экрана игрока. Цвета — токены ui.css. */
+[hidden] { display: none !important; }
+#app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.topbar { top: env(safe-area-inset-top, 0px); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 11; background: var(--bg); }
+
+.sb-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; gap: 8px; align-items: stretch;
+  padding: 8px max(12px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  background: var(--panel); border-top: 1px dashed var(--accent);
+}
+.sb-bar button { min-height: 52px; }
+.sb-nav { flex: none; width: 56px; font-size: 1.8rem; line-height: 1; padding: 0; }
+.sb-label { flex: 1; min-width: 0; font-weight: 700; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-variant-numeric: tabular-nums; }
+.sb-hint { font-size: .72rem; font-weight: 400; color: var(--muted); letter-spacing: .04em; }
+
+.sb-sheet {
+  position: fixed; left: 0; right: 0; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); z-index: 39;
+  max-height: 62dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  padding: 14px max(16px, env(safe-area-inset-right, 0px)) 14px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--panel-2); border-top: 1px solid var(--line); box-shadow: 0 -12px 30px #0008;
+}
+.sb-field { display: flex; flex-direction: column; gap: 6px; }
+.sb-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sb-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.sb-seg button, .sb-row button { min-height: 40px; padding: .4em .8em; font-size: .92rem; }
+.sb-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sb-row button { flex: 1; }
+.sb-foot { margin: 0; font-size: .8rem; color: var(--muted); }
+button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.toast { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+.sb-act { width: auto; min-width: 72px; padding: 0 14px; font-size: 1.05rem; font-weight: 800; background: var(--accent); border-color: var(--accent); color: #1b0e04; }
+.sb-act:disabled { background: var(--panel-2); border-color: var(--line); color: var(--muted); }
+
+/* экран ТВ в песочнице: страница 1280×720 в iframe, вписана в свободное место (на телефоне — поверни горизонтально) */
+.sb-tv { position: fixed; left: 0; right: 0; top: env(safe-area-inset-top, 0px); bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+.sb-tv-frame { flex: none; width: 1280px; height: 720px; border: 0; transform-origin: center; }
+
+/* пульт поверх всего приложения игрока: язычок у правого края, панель снизу */
+.sb-fab { position: fixed; right: env(safe-area-inset-right, 0px); top: 46%; z-index: 60; min-height: 0; width: 40px; height: 56px; padding: 0;
+  border-radius: 14px 0 0 14px; border: 1px dashed var(--accent); border-right: 0; background: var(--panel); font-size: 1.3rem; opacity: .85; }
+.sb-sheet.solo { bottom: 0; z-index: 61; max-height: 72dvh; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px dashed var(--accent); }
+.sb-head { display: flex; align-items: center; justify-content: space-between; }
+.sb-head button { min-height: 36px; padding: 0 12px; }
+.sb-scenes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.sb-scenes button { min-height: 40px; padding: .3em .4em; font-size: .82rem; line-height: 1.15; }
+.sb-row button.on { background: var(--accent); color: #1b0e04; border-color: var(--accent); }
+.sb-now { flex: 2; align-self: center; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sb-codes { display: flex; flex-wrap: wrap; gap: 6px; font: 600 .85rem/1.4 ui-monospace, monospace; }
+.sb-codes span { padding: 2px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.sb-codes span.found { text-decoration: line-through; opacity: .45; }

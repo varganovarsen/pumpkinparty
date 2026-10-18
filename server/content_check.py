@@ -196,10 +196,37 @@ def check_seeds(content_dir: Path, errors: list[str], warnings: list[str]) -> No
         warnings.append("seeds.yaml: список пуст")
 
 
+def check_bomb(content_dir: Path, errors: list[str], warnings: list[str], rounds: int = 3) -> None:
+    path = content_dir / "bomb.yaml"
+    if not path.exists():
+        warnings.append("bomb.yaml: нет файла, «Бомба» недоступна")
+        return
+    data = _load(path, errors)
+    if data is None:
+        return
+    if not isinstance(data, list):
+        errors.append("bomb.yaml: ожидается список тем")
+        return
+    seen: set[str] = set()
+    for i, t in enumerate(data, 1):
+        if not isinstance(t, str) or not t.strip():
+            errors.append(f"bomb.yaml, тема {i}: ожидается непустая строка")
+            continue
+        key = t.strip().casefold()
+        if key in seen:
+            warnings.append(f"bomb.yaml: тема «{t.strip()}» повторяется")
+        seen.add(key)
+        if len(t) > 60:
+            warnings.append(f"bomb.yaml, тема {i}: длиннее 60 символов, на ТВ будет мелко")
+    if len(seen) < rounds:
+        warnings.append(f"bomb.yaml: тем {len(seen)}, на {rounds} раунда без повторов нужно больше")
+
+
 def check(content_dir: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     check_facts(content_dir, errors, warnings)
     check_quiz(content_dir, errors, warnings)
     check_seeds(content_dir, errors, warnings)
+    check_bomb(content_dir, errors, warnings)
     return errors, warnings

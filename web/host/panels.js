@@ -102,6 +102,91 @@ export function seedsPanel(run) {
   };
 }
 
+// ---------------------------------------------------------------- бомба
+export function bombPanel(run) {
+  const root = el('div');
+  const PHASE = { idle: 'Раунды не начаты', topic: 'Тема выбрана, ждём старта', countdown: 'Отсчёт…', running: 'Идёт', boom: 'Взрыв!', round_over: 'Раунд окончен' };
+  let link = null;
+  let last = null;
+  const status = el('b', { class: 'grow' });
+  setInterval(() => {
+    if (!last || !link || last.phase !== 'running' || !last.deadline_ms) return;
+    const left = Math.max(0, (last.deadline_ms - link.serverNow()) / 1000);
+    status.textContent = `💣 ${last.holder?.name}: ${left.toFixed(1)} с`;
+  }, 200);
+
+  function timingForm(t, live) {
+    const num = (v, min, max) => el('input', { type: 'number', min, max, step: '0.5', value: String(v ?? ''), style: { width: '64px', padding: '6px 8px' } });
+    const start = num(t.start_seconds, '2', '60');
+    const step = num(t.step_seconds, '0', '10');
+    const min = num(t.min_seconds, '1', '60');
+    const seq = [];
+    for (let s = t.start_seconds, i = 0; i < 6; i++, s = Math.max(t.min_seconds, s - t.step_seconds)) seq.push(s);
+    const line = (label, inp) => el('div', { class: 'toggle' }, el('div', {}, label), el('div', {}, inp, ' с'));
+    return el('div', { class: 'card' },
+      el('b', {}, 'Время на ход'),
+      line('Первый круг', start), line('Каждый круг короче на', step), line('Но не меньше', min),
+      el('div', { class: 'muted', style: { fontSize: '.85rem', margin: '4px 0' } }, `По кругам: ${seq.join(' → ')} с…`),
+      el('button', { style: { width: '100%' }, onclick: () => run('bomb_timing', {
+        start_seconds: Number(start.value), step_seconds: Number(step.value), min_seconds: Number(min.value) }, 'Время на ход сохранено') },
+      live ? 'Сохранить (со следующего хода)' : 'Сохранить время на ход'));
+  }
+
+  function orderList(b, live) {
+    const ids = (b.order || []).map((o) => o.player_id);
+    const move = (i, d) => {
+      const next = [...ids];
+      [next[i], next[i + d]] = [next[i + d], next[i]];
+      run('bomb_order', { order: next });
+    };
+    const shuffle = () => {
+      const next = [...ids];
+      for (let i = next.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [next[i], next[j]] = [next[j], next[i]]; }
+      run('bomb_order', { order: next }, 'Порядок перемешан');
+    };
+    const list = el('ol', { class: 'bomb-order' });
+    (b.order || []).forEach((o, i) => list.append(el('li', { class: o.connected && o.can_play ? '' : 'off' },
+      el('span', { class: 'grow' }, o.name, !o.can_play ? ' (не играет)' : !o.connected ? ' (не в сети)' : ''),
+      el('button', { class: 'small', disabled: live || i === 0, onclick: () => move(i, -1) }, '↑'),
+      el('button', { class: 'small', disabled: live || i === ids.length - 1, onclick: () => move(i, 1) }, '↓'))));
+    return el('details', { class: 'card', open: !live && b.phase !== 'round_over' },
+      el('summary', {}, `Порядок хода (${(b.order || []).filter((o) => o.connected && o.can_play).length} в игре)`),
+      list,
+      el('button', { style: { width: '100%' }, disabled: live, onclick: shuffle }, '🔀 Перемешать'),
+      el('p', { class: 'muted' }, live ? 'Менять порядок можно между раундами.' : 'Играют те, кто в сети в момент старта. Каждый раунд начинает следующий по кругу.'));
+  }
+
+  return {
+    el: root,
+    setLink(l) { link = l; },
+    update(S) {
+      const b = S.bomb || {};
+      last = b;
+      const live = ['countdown', 'running', 'boom'].includes(b.phase);
+      status.textContent = PHASE[b.phase] || b.phase || '…';
+      const res = (b.results || []).map((r) => `${r.place}. ${r.name}${r.points ? ` +${r.points}` : ''}`).join(' · ');
+      // кнопка шага — из состояния модуля: событие next_step приходит позже, чем bomb
+      const n = b.next;
+      clear(root).append(...[
+        el('div', { class: 'row' }, status, el('span', { class: 'badge' }, `раунд ${b.round || 0} из ${b.rounds || 3}`)),
+        b.topic ? el('div', { class: 'qh-q' }, el('div', { class: 'muted' }, 'Тема'), el('div', { class: 'qh-text' }, b.topic)) : null,
+        live ? el('div', { class: 'muted' }, `Круг ${b.lap}, ${b.turn_seconds ?? '—'} с на ход, в игре ${b.alive_count}`) : null,
+        res ? el('div', { class: 'qh-list' }, res) : null,
+        n && !n.disabled ? el('button', { class: 'primary', style: { width: '100%', marginTop: '8px' }, onclick: () => run(n.cmd, n.args || {}) }, n.label) : null,
+        el('div', { class: 'row', style: { marginTop: '8px' } },
+          el('button', { class: 'grow', disabled: b.phase !== 'topic', onclick: () => run('bomb_topic', {}, 'Другая тема') }, '🎰 Другая тема'),
+          el('button', { class: 'grow danger', disabled: b.phase !== 'running', onclick: () => run('bomb_boom', {}, 'Взорван') }, '💥 Взорвать')),
+        el('p', { class: 'muted' }, '«Взорвать» — если игрок повторил слово или передал молча.'),
+        el('button', { style: { width: '100%' }, disabled: !live,
+          onclick: () => { if (confirm('Прервать раунд? Очков не будет, раунд можно начать заново с той же темой.')) run('bomb_abort', {}, 'Раунд прерван'); } }, 'Прервать раунд'),
+        orderList(b, live),
+        timingForm(b.timing || {}, live),
+        el('p', { class: 'muted' }, 'Темы — в content/bomb.yaml. Сброс «Бомбы» — в аварийном разделе.'),
+      ].filter(Boolean));
+    },
+  };
+}
+
 // ---------------------------------------------------------------- голосование и итоги резьбы
 export function votePanel(run) {
   const root = el('div');

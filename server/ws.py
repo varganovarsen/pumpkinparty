@@ -271,6 +271,15 @@ HOST_EXTRA: dict[str, Callable] = {
     "seeds_time": lambda hub, c, m: hub.ev.seeds.add_time(m.get("seconds", 60)),
     "seeds_stop": lambda hub, c, m: hub.ev.seeds.stop(),
     "seeds_reset": lambda hub, c, m: hub.ev.seeds.reset(),
+    # бомба
+    "bomb_topic": _in_scene("bomb")(lambda hub, c, m: hub.ev.bomb.pick_topic()),
+    "bomb_start": _in_scene("bomb")(lambda hub, c, m: hub.ev.bomb.start()),
+    "bomb_boom": _in_scene("bomb")(lambda hub, c, m: hub.ev.bomb.explode(by_host=True)),
+    "bomb_abort": lambda hub, c, m: hub.ev.bomb.abort(),
+    "bomb_order": lambda hub, c, m: hub.ev.bomb.set_order(m.get("order") or []),
+    "bomb_timing": lambda hub, c, m: hub.ev.bomb.set_timing(m.get("start_seconds"), m.get("step_seconds"),
+                                                            m.get("min_seconds")),
+    "bomb_reset": lambda hub, c, m: hub.ev.bomb.reset(),
     # резьба
     "vote_start": _in_scene("carve_vote")(lambda hub, c, m: hub.ev.vote.start()),
     "vote_close": _in_scene("carve_vote")(lambda hub, c, m: hub.ev.vote.close()),
@@ -292,6 +301,7 @@ PLAYER_EXTRA: dict[str, Callable] = {
     "game_result": lambda hub, c, m: hub.ev.game.result(c.player_id, m.get("caught")),
     "vote": lambda hub, c, m: hub.ev.vote.vote(c.player_id, m.get("n")),
     "seeds_enter": lambda hub, c, m: hub.ev.seeds.enter(c.player_id, m.get("code")),
+    "bomb_pass": lambda hub, c, m: hub.ev.bomb.pass_bomb(c.player_id),
 }
 
 

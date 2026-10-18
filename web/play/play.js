@@ -5,6 +5,7 @@ import { avatarPicker } from '/web/play/avatar_picker.js';
 import { mountQuiz } from '/web/play/quiz.js';
 import { mountGame } from '/web/play/game.js';
 import { mountSeeds } from '/web/play/seeds.js';
+import { mountBomb } from '/web/play/bomb.js';
 import { mountVote } from '/web/play/vote.js';
 import { mountPhotoTab } from '/web/play/editor.js';
 import { mountAlbum } from '/web/play/album.js';
@@ -57,6 +58,7 @@ async function boot() {
 function renderJoin(prefillName = '') {
   S.link?.stop();
   S.link = null;
+  offlineBar(true); // убрать плашку «Нет связи», если она осталась от прошлого соединения
   const name = el('input', { type: 'text', maxlength: String(S.info.name_max), placeholder: 'Как тебя зовут?', autocomplete: 'off', value: prefillName });
   const err = el('div', { class: 'err' });
   const claimBox = el('div');
@@ -104,18 +106,20 @@ function renderJoin(prefillName = '') {
 // ---------------------------------------------------------------- соединение
 function startLink(token) {
   S.link?.stop();
-  S.link = new Link({
+  const link = new Link({
     role: 'player',
     token,
     onMessage,
-    onStatus: (on) => { S.online = on; offlineBar(on); },
+    // остановленное соединение (выход на экран входа) закрывается позже и не должно показывать «Нет связи»
+    onStatus: (on) => { if (S.link !== link) return; S.online = on; offlineBar(on); },
     onAuthFailed: () => { store(TOKEN_KEY, null); teardown(); renderJoin(); },
   });
-  S.link.connect();
+  S.link = link;
+  link.connect();
 }
 
-const MODULES = ['quiz', 'game', 'seeds', 'vote', 'timer', 'finale'];
-const VIEWS = { quiz: [mountQuiz, 'quiz'], game: [mountGame, 'game'], seeds: [mountSeeds, 'seeds'], carve_vote: [mountVote, 'vote'] };
+const MODULES = ['quiz', 'game', 'seeds', 'bomb', 'vote', 'timer', 'finale'];
+const VIEWS = { quiz: [mountQuiz, 'quiz'], game: [mountGame, 'game'], seeds: [mountSeeds, 'seeds'], bomb: [mountBomb, 'bomb'], carve_vote: [mountVote, 'vote'] };
 
 function onMessage(m) {
   switch (m.t) {
@@ -136,7 +140,7 @@ function onMessage(m) {
     case 'me': S.me = m.me; renderTop(); break;
     case 'settings': S.settings = m.settings; renderTop(); break;
     case 'facts': S.facts = m.facts; S.factsLocked = !!m.locked; if (S.tab === 'facts' && !S.scene?.participating) renderTab(); break;
-    case 'quiz': case 'game': case 'seeds': case 'vote': case 'timer': case 'finale':
+    case 'quiz': case 'game': case 'seeds': case 'bomb': case 'vote': case 'timer': case 'finale':
       S[m.t] = m[m.t];
       if (view?.module === m.t) view.update(S[m.t]);
       if (m.t === 'timer') renderBanner();
