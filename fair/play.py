@@ -161,8 +161,12 @@ class WebHuman(Agent):
         if g.week == 1:
             cheap = [d.name for d in g.c.dishes.values() if d.cheap == me.role]
             self.say(f"Вы — {me.role}. Профильное сырьё: {', '.join(g.profile(me))} "
-                     f"(+{g.cfg['gather_profile']} за действие, остальное +{g.cfg['gather_other']})."
-                     + (f" Готовите за {g.cfg['cook_actions_cheap']} действие: {', '.join(cheap)}." if cheap else ""))
+                     f"(+{g.rule(me, 'gather_profile')} за действие, остальное +{g.rule(me, 'gather_other')})."
+                     + (f" Готовите за {g.cfg['cook_actions_cheap']} действие: {', '.join(cheap)}." if cheap else "")
+                     + (f" Любое блюдо готовите за {g.rule(me, 'cook_actions')} действий."
+                        if g.rule(me, "cook_actions") != g.cfg["cook_actions"] else "")
+                     + (" Рынок открыт всю подготовку: после каждого действия — раунд торга."
+                        if g.cfg["market"].get("during_work") else ""))
 
     def fulfill_by_id(self, g, me, oid) -> None:
         o = next((o for o in me.open_orders if o.id == oid), None)

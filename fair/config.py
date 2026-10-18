@@ -31,8 +31,8 @@ def set_path(cfg: dict, key: str, value) -> None:
         if not isinstance(node, dict) or part not in node:
             raise KeyError(f"нет параметра {key}")
         node = node[part]
-    # новые ключи разрешены только в архетипах ботов (там пустые словари)
-    if parts[-1] not in node and "archetypes" not in parts:
+    # новые ключи разрешены только в архетипах ботов и поправках ролей (там неполные словари)
+    if parts[-1] not in node and "archetypes" not in parts and "role_rules" not in parts:
         raise KeyError(f"нет параметра {key}")
     node[parts[-1]] = value
 
@@ -86,6 +86,12 @@ class Content:
             for r in prof:
                 if r not in self.raws:
                     raise ValueError(f"{role}: сырья «{r}» нет в списке raws")
+        for role, rules in (cfg.get("role_rules") or {}).items():
+            if role not in self.roles:
+                raise ValueError(f"role_rules: роли «{role}» нет")
+            for k in rules or {}:
+                if k not in ("gather_profile", "gather_other", "cook_actions"):
+                    raise ValueError(f"role_rules.{role}: «{k}» — можно gather_profile, gather_other, cook_actions")
         for k, w in cfg["buyer"]["qty_weights"].items():
             if not isinstance(w, (int, float)) or not str(k).isdigit():
                 raise ValueError(f"buyer.qty_weights: «{k}: {w}» — нужно {{штук: вес}}, в YAML с пробелом после двоеточия")

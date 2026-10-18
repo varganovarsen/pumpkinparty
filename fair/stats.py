@@ -24,6 +24,7 @@ class GameStats:
         self.orders_value = 0
         self.dishes_before_fair: dict[int, int] = {}
         self.raws_left_prep = 0
+        self.spoiled = 0
         self.stock_by_day: list[int] = []
         self.sold_by_day = [0] * g.cfg["fair_days"]
         self.demand_units = self.sold_units = 0
@@ -109,6 +110,7 @@ class Summary:
         self.trades = _mean(g.trades for g in games)
         self.dishes_left = _mean(g.dishes_left for g in games)
         self.raws_left = _mean(g.raws_left_prep for g in games)
+        self.spoiled = _mean(g.spoiled for g in games)
         prod, cons = Counter(), Counter()
         for g in games:
             prod.update(g.produced)
@@ -201,7 +203,8 @@ class Summary:
             f"{SOURCE_NAMES[s]} {v:.0%}" for s, v in self.income_share.items()) + f"; штрафы −{self.penalty_share:.0%}")
         L.append(f"\nПодготовка: блюд к ярмарке {self.dishes_before:.1f} на игрока "
                  f"(в цели {self.cfg['flags']['dishes_before_fair']} — {self.dishes_in_range:.0%} игроков), "
-                 f"сырья не пущено в дело {self.raws_left:.0f} ед., сделок на рынках {self.trades:.0f} за партию")
+                 f"сырья не пущено в дело {self.raws_left:.0f} ед., испортилось {self.spoiled:.0f}, "
+                 f"сделок на рынках {self.trades:.0f} за партию")
         L.append("  Сырьё (собрано → потрачено за партию):")
         L.append("    " + "; ".join(f"{r} {p:.0f}→{c:.0f}" for r, (p, c) in self.raw_use.items()))
         L.append("  Приготовлено блюд за партию:")

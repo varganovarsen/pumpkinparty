@@ -94,9 +94,13 @@ class Human(Agent):
         if g.week == 1:
             cheap = [d.name for d in g.c.dishes.values() if d.cheap == me.role]
             print(f"\nВы — {me.role}. Профильное сырьё: {', '.join(g.profile(me))} "
-                  f"(+{g.cfg['gather_profile']} за действие, остальное +{g.cfg['gather_other']}).")
+                  f"(+{g.rule(me, 'gather_profile')} за действие, остальное +{g.rule(me, 'gather_other')}).")
             if cheap:
                 print(f"Готовите за {g.cfg['cook_actions_cheap']} действие: {', '.join(cheap)}.")
+            if g.rule(me, "cook_actions") != g.cfg["cook_actions"]:
+                print(f"Любое блюдо готовите за {g.rule(me, 'cook_actions')} действий.")
+            if g.cfg["market"].get("during_work"):
+                print("Рынок открыт всю подготовку: после каждого действия — раунд торга.")
             print("Соперники: " + ", ".join(f"{p.label}" for p in g.players if p is not me))
 
     def next_action(self, g, me, left):

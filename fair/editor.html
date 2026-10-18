@@ -144,6 +144,7 @@ const HINTS = {
   weeks: "недель подготовки", actions_per_week: "действий в неделю", gather_profile: "своего сырья за «собрать»",
   gather_other: "чужого сырья за «собрать»", cook_actions: "действий на «приготовить»",
   cook_actions_cheap: "у роли из поля cheap блюда", rumor_weeks: "недели, когда приходят слухи",
+  spoil: "доля запаса сырья, что портится в конце недель 1-3", role_rules: "поправки правил по ролям: gather_profile, gather_other, cook_actions",
   fair_days: "дней ярмарки", stops_per_buyer: "остановок у покупателя",
   buyers_per_player: "главная ручка: карточек покупателей на игрока-покупателя в половине дня",
   fill_idle_stands: "стенд без покупателя при нечётном числе получает вторую карточку",
@@ -152,13 +153,15 @@ const HINTS = {
   "buyer.pays_bonus": "банк платит игроку-покупателю «максимум − цена»",
   "demand.base_weight": "базовый вес блюда в карточках", "demand.main_ingredient_weight": "+ за игрока с профильным главным ингредиентом",
   "demand.cheap_cook_weight": "+ за игрока, готовящего блюдо дёшево",
+  "demand.stock_weight": "+ за порцию блюда на прилавках продающих (на продавца)",
   "orders.deck_size": "карточек заказов", "orders.choices": "на выбор", "orders.dishes": "блюд на карточке, от–до",
   "orders.qty": "штук каждого, от–до", "orders.penalty": "штраф: доля стоимости невыполненного",
   "events.count": "событий на ярмарке", "events.weather_bonus": "надбавка за погодную категорию",
   "events.exclusive": "события, которые не выпадают вместе (JSON)",
   "tender.count": "блюд в тендере", "tender.start": "стартовая цена, доля базы", "tender.step": "минимальное снижение",
   "tender.dish_in_rumor": "слух называет блюдо тендера", "banquet.max_dishes": "блюд в наборе", "banquet.bonus": "надбавка банкета",
-  "market.rounds": "раундов сведения заявок",
+  "market.rounds": "раундов сведения заявок на ярмарке и после", "market.during_work": "работа и рынок одновременно",
+  "market.rounds_during_work": "раундов сведения после каждого шага работы",
   "bots.mix": "архетипы раздаются ботам по кругу",
   target_dishes: "сколько блюд хочет к ярмарке", cook_from_week: "с какой недели готовит", max_orders: "заказов максимум",
   order_load: "берёт заказ, если план ≤ этой доли оставшихся действий", action_value: "«цена» действия при выборе блюд",
@@ -182,7 +185,7 @@ const HINTS = {
   "flags.order_fail_rate": "невыполненных заказов больше", "flags.negative_rate": "в минусе больше",
 };
 const SECTIONS = [
-  ["Подготовка", ["players", "start_coins", "weeks", "actions_per_week", "gather_profile", "gather_other", "cook_actions", "cook_actions_cheap", "rumor_weeks"]],
+  ["Подготовка", ["players", "start_coins", "weeks", "actions_per_week", "gather_profile", "gather_other", "cook_actions", "cook_actions_cheap", "role_rules", "spoil", "rumor_weeks"]],
   ["Ярмарка", ["fair_days", "stops_per_buyer", "buyers_per_player", "fill_idle_stands"]],
   ["Покупатели", ["buyer"]], ["Спрос следует за ролями", ["demand"]], ["Заказы", ["orders"]],
   ["События", ["events"]], ["Тендер", ["tender"]], ["Банкет", ["banquet"]], ["Рынок", ["market"]],
@@ -299,6 +302,7 @@ function renameRole(from, to) {
   if (!to || to === from) return render();
   if (to in cfg.roles) { toast(`Роль «${to}» уже есть`); return render(); }
   cfg.roles = renameKey(cfg.roles, from, to);
+  if (cfg.role_rules?.[from]) cfg.role_rules = renameKey(cfg.role_rules, from, to);
   for (const d of Object.values(cfg.dishes)) if (d.cheap === from) d.cheap = to;
   changed(); render();
 }
@@ -306,6 +310,7 @@ function deleteRole(role) {
   const cheap = Object.values(cfg.dishes).filter((d) => d.cheap === role).length;
   if (Object.keys(cfg.roles).length <= 1) return toast("Нужна хотя бы одна роль");
   delete cfg.roles[role];
+  if (cfg.role_rules) delete cfg.role_rules[role];
   for (const d of Object.values(cfg.dishes)) if (d.cheap === role) delete d.cheap;
   if (cheap) toast(`У ${cheap} блюд снята дешёвая готовка`);
   changed(); render();

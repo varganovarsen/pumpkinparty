@@ -85,9 +85,9 @@ class Bot(Agent):
         for r, n in need.items():
             deficit = max(0, n - me.raws[r])
             if r in g.profile(me):
-                acts += math.ceil(deficit / g.cfg["gather_profile"])
+                acts += math.ceil(deficit / g.gather_gain(me, r))
             else:
-                acts += deficit * self.P["self_gather_share"]
+                acts += deficit * self.P["self_gather_share"] / g.gather_gain(me, r)
         return acts
 
     # ------------------------------------------------------------ работа

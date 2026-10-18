@@ -142,7 +142,8 @@ class Game:
         if n < 2:
             raise ValueError("нужно хотя бы 2 игрока")
         roles = list(self.c.roles)
-        deck = [roles[i % len(roles)] for i in range(n)]
+        # полные круги ролей, остаток — разные роли по жребию (иначе при 10 игроках четверо всегда у первой роли)
+        deck = roles * (n // len(roles)) + rng.sample(roles, n % len(roles))
         rng.shuffle(deck)
         names = names or [f"Бот{i + 1}" for i in range(n)]
         self.players = [Player(i, names[i], deck[i], agents[i], cfg["start_coins"]) for i in range(n)]
@@ -169,11 +170,15 @@ class Game:
     def profile(self, p: Player) -> tuple[str, ...]:
         return self.c.roles[p.role]
 
+    def rule(self, p: Player, key: str):
+        """Число правил с поправкой на роль (role_rules), иначе общее."""
+        return (self.cfg.get("role_rules") or {}).get(p.role, {}).get(key, self.cfg[key])
+
     def gather_gain(self, p: Player, raw: str) -> int:
-        return self.cfg["gather_profile"] if raw in self.profile(p) else self.cfg["gather_other"]
+        return self.rule(p, "gather_profile") if raw in self.profile(p) else self.rule(p, "gather_other")
 
     def cook_cost(self, p: Player, dish: str) -> int:
-        return self.cfg["cook_actions_cheap"] if self.c.dishes[dish].cheap == p.role else self.cfg["cook_actions"]
+        return self.cfg["cook_actions_cheap"] if self.c.dishes[dish].cheap == p.role else self.rule(p, "cook_actions")
 
     def can_cook(self, p: Player, dish: str) -> bool:
         return all(p.raws[r] >= q for r, q in self.c.dishes[dish].ingredients.items())
@@ -268,16 +273,61 @@ class Game:
         self._update_raw_demand()
         order = self.players[:]
         self.rng.shuffle(order)
-        for p in order:
-            left = self.A
-            while left > 0:
-                act = p.agent.next_action(self, p, left)
-                if act is None:
-                    break
-                left -= self.do_action(p, act)
-            self._auto_fulfill(p)
-        self.can_cook_later = self.week < self.cfg["weeks"]
-        self._market(f"Рынок недели {self.week}")
+        if not self.cfg["market"].get("during_work"):
+            for p in order:
+                left = self.A
+                while left > 0:
+                    act = p.agent.next_action(self, p, left)
+                    if act is None:
+                        break
+                    left -= self.do_action(p, act)
+                self._auto_fulfill(p)
+            self.can_cook_later = self.week < self.cfg["weeks"]
+            self._market(f"Рынок недели {self.week}")
+            self._spoil()
+            return
+        # работа и торговля вместе: шаг — каждый делает одно действие (бесплатные — сколько хочет), затем раунд рынка
+        self.log.info(f"\n— Работа и рынок недели {self.week} —")
+        self.market = Market(self)
+        left = {p.idx: self.A for p in self.players}
+        human = self.human()
+        for step in range(self.A):
+            for p in order:
+                while left[p.idx] > 0:
+                    act = p.agent.next_action(self, p, left[p.idx])
+                    if act is None:
+                        left[p.idx] = 0
+                        break
+                    cost = self.do_action(p, act)
+                    left[p.idx] -= cost
+                    if cost:
+                        break
+                self._auto_fulfill(p)
+            if step == self.A - 1:
+                self.can_cook_later = self.week < self.cfg["weeks"]
+            self._update_raw_demand()
+            for _ in range(self.cfg["market"]["rounds_during_work"]):
+                self.market.bot_round()
+                for p in self.players:
+                    self._auto_fulfill(p)
+            if human is not None:
+                human.agent.market_turn(self, human, self.market)
+        self.market = None
+        self._spoil()
+
+    def _spoil(self):
+        """Конец недели: часть каждого запаса сырья портится (накопительство не бесплатно)."""
+        share = self.cfg.get("spoil", 0)
+        if not share or self.week >= self.cfg["weeks"]:
+            return
+        for p in self.players:
+            for r, q in p.raws.items():
+                lost = math.floor(q * share)
+                if lost:
+                    p.raws[r] -= lost
+                    self.stats.spoiled += lost
+                    if p.agent.human:
+                        self.log.info(f"Испортилось: {r} −{lost}")
 
     def _update_raw_demand(self):
         """Грубая оценка спроса на сырьё (заменяет разговоры на рынке): дефицит / излишек по всем ботам."""
@@ -437,10 +487,12 @@ class Game:
             w[name] = v
         return w
 
-    def make_card(self, player: Player) -> BuyerCard:
+    def make_card(self, player: Player, sellers: list[Player] | None = None) -> BuyerCard:
         b = self.cfg["buyer"]
         names = list(self.demand_weights)
-        weights = [self.demand_weights[n] for n in names]
+        # покупатели идут на то, что лежит на прилавках: + за каждую порцию у продающих, на продавца
+        k = self.cfg["demand"].get("stock_weight", 0) / max(1, len(sellers or ()))
+        weights = [self.demand_weights[n] + k * sum(s.dishes[n] for s in sellers or ()) for n in names]
         k = self.rng.randint(*b["positions"])
         chosen = []
         while len(chosen) < min(k, len(names)):
@@ -489,7 +541,7 @@ class Game:
         n_cards = round(base * self.cfg["buyers_per_player"])
         players_cycle = buyers[:]
         self.rng.shuffle(players_cycle)
-        cards = [self.make_card(players_cycle[i % len(players_cycle)]) for i in range(n_cards)]
+        cards = [self.make_card(players_cycle[i % len(players_cycle)], sellers) for i in range(n_cards)]
         half_demand = sum(p.qty for c in cards for p in c.positions)
         self.stats.demand_units += half_demand
         sold_before = self.stats.sold_units
