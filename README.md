@@ -19,7 +19,7 @@
 ## Разработка
 
 - Тесты: `pip install -r requirements-dev.txt && python -m pytest`. Синтаксис JS: `node --experimental-vm-modules tools/check_js.mjs`.
-- Песочница модуля для телефона (без сервера, один html): `python tools/make_sandbox.py quiz` → `data/sandbox/quiz.html`. Настоящий код `web/play` на подставном сервере, внизу пульт фаз.
+- Песочница для телефона (без сервера, один html): `python tools/make_sandbox.py player` → `data/sandbox/player.html` — всё приложение игрока на подставном сервере (WebSocket и `/api` внутри страницы), сцены переключает пульт ведущего (язычок справа), остальные гости — боты. `quiz` и `bomb` — один модуль с подробным пультом (у бомбы ещё и вид ТВ).
 - Симулятор: `python tools/simulator.py --players 8 --speed 30 --scenario evening` (квиз — на тестовом контенте).
 - Попробовать квиз без настоящего контента: `set PUMPKIN_CONTENT=tests\fixtures\content` (Windows) перед запуском сервера.
 - Бомба: темы — `content/bomb.yaml`, время на ход и порядок игроков — в разделе сцены на `/host`.

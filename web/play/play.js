@@ -58,6 +58,7 @@ async function boot() {
 function renderJoin(prefillName = '') {
   S.link?.stop();
   S.link = null;
+  offlineBar(true); // убрать плашку «Нет связи», если она осталась от прошлого соединения
   const name = el('input', { type: 'text', maxlength: String(S.info.name_max), placeholder: 'Как тебя зовут?', autocomplete: 'off', value: prefillName });
   const err = el('div', { class: 'err' });
   const claimBox = el('div');
@@ -105,14 +106,16 @@ function renderJoin(prefillName = '') {
 // ---------------------------------------------------------------- соединение
 function startLink(token) {
   S.link?.stop();
-  S.link = new Link({
+  const link = new Link({
     role: 'player',
     token,
     onMessage,
-    onStatus: (on) => { S.online = on; offlineBar(on); },
+    // остановленное соединение (выход на экран входа) закрывается позже и не должно показывать «Нет связи»
+    onStatus: (on) => { if (S.link !== link) return; S.online = on; offlineBar(on); },
     onAuthFailed: () => { store(TOKEN_KEY, null); teardown(); renderJoin(); },
   });
-  S.link.connect();
+  S.link = link;
+  link.connect();
 }
 
 const MODULES = ['quiz', 'game', 'seeds', 'bomb', 'vote', 'timer', 'finale'];

@@ -36,3 +36,17 @@ button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; 
 .sb-tv { position: fixed; left: 0; right: 0; top: env(safe-area-inset-top, 0px); bottom: calc(68px + env(safe-area-inset-bottom, 0px));
   display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
 .sb-tv-frame { flex: none; width: 1280px; height: 720px; border: 0; transform-origin: center; }
+
+/* пульт поверх всего приложения игрока: язычок у правого края, панель снизу */
+.sb-fab { position: fixed; right: env(safe-area-inset-right, 0px); top: 46%; z-index: 60; min-height: 0; width: 40px; height: 56px; padding: 0;
+  border-radius: 14px 0 0 14px; border: 1px dashed var(--accent); border-right: 0; background: var(--panel); font-size: 1.3rem; opacity: .85; }
+.sb-sheet.solo { bottom: 0; z-index: 61; max-height: 72dvh; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px dashed var(--accent); }
+.sb-head { display: flex; align-items: center; justify-content: space-between; }
+.sb-head button { min-height: 36px; padding: 0 12px; }
+.sb-scenes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.sb-scenes button { min-height: 40px; padding: .3em .4em; font-size: .82rem; line-height: 1.15; }
+.sb-row button.on { background: var(--accent); color: #1b0e04; border-color: var(--accent); }
+.sb-now { flex: 2; align-self: center; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sb-codes { display: flex; flex-wrap: wrap; gap: 6px; font: 600 .85rem/1.4 ui-monospace, monospace; }
+.sb-codes span { padding: 2px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.sb-codes span.found { text-decoration: line-through; opacity: .45; }
