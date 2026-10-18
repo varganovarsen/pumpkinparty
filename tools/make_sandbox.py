@@ -1,9 +1,10 @@
 """Песочница модуля для телефона: один html без сервера.
 
-    python tools/make_sandbox.py quiz [--out data/sandbox/quiz.html]
+    python tools/make_sandbox.py quiz|bomb [--out data/sandbox/<модуль>.html]
 
 Склеивает настоящие стили и код экрана игрока (web/shared, web/play) с подставным сервером
-из tools/sandbox/<модуль>.js. Вопросы — из content/ (PUMPKIN_CONTENT меняет папку).
+из tools/sandbox/<модуль>.js. Контент — из content/ (PUMPKIN_CONTENT меняет папку).
+Если у модуля есть сцена ТВ, она собирается в отдельный документ для <iframe> (window.SANDBOX.tvHtml).
 Файл открывается в браузере как есть или публикуется ссылкой, чтобы смотреть с телефона.
 """
 from __future__ import annotations
@@ -47,9 +48,33 @@ def quiz_data(content: Path) -> dict:
     return {"rounds": rounds, "avatar": data_uri(ROOT / "assets" / "avatars" / "pumpkin-1.png")}
 
 
+def bomb_data(content: Path) -> dict:
+    topics = yaml.safe_load((content / "bomb.yaml").read_text(encoding="utf-8")) or []
+    cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8")).get("bomb", {})
+    return {
+        "topics": [str(t) for t in topics if str(t or "").strip()],
+        "rounds": cfg.get("rounds", 3), "points": cfg.get("points", [500, 400, 300, 200, 100]),
+        "timing": {k: cfg.get(k, d) for k, d in (("start_seconds", 5), ("step_seconds", 1), ("min_seconds", 2))},
+        "avatars": [data_uri(ROOT / "assets" / "avatars" / f"pumpkin-{i}.png") for i in range(1, 6)],
+    }
+
+
 MODULES = {
     "quiz": {"title": "Квиз на телефоне", "code": [WEB / "play" / "quiz.js"], "data": quiz_data},
+    "bomb": {"title": "Песочница «Бомбы»", "code": [WEB / "play" / "bomb.js"], "data": bomb_data,
+             "tv": WEB / "tv" / "scenes" / "bomb.js"},
 }
+
+
+def tv_document(scene: Path) -> str:
+    """Отдельная страница ТВ для <iframe>: стили ТВ и модуль сцены, mount() — в window.__mount."""
+    css = "\n".join(p.read_text(encoding="utf-8") for p in (WEB / "shared" / "ui.css", WEB / "tv" / "tv.css"))
+    js = "\n".join(module_source(p) for p in (WEB / "shared" / "util.js", scene)) + "\nwindow.__mount = mount;\n"
+    js = js.replace("</script", "<\\/script")
+    return ('<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+            f"<style>{css}\nhtml, body {{ cursor: default; }}</style></head>"
+            f'<body><div id="stage"><div class="scene-root" id="root"></div></div>'
+            f'<script type="module">{js}</script></body></html>')
 
 
 def build(name: str) -> str:
@@ -58,7 +83,10 @@ def build(name: str) -> str:
     css = "\n".join(p.read_text(encoding="utf-8")
                     for p in (WEB / "shared" / "ui.css", WEB / "play" / "play.css", SANDBOX / "sandbox.css"))
     js = "\n".join(module_source(p) for p in [WEB / "shared" / "util.js", *spec["code"], SANDBOX / f"{name}.js"])
-    data = json.dumps(spec["data"](content), ensure_ascii=False).replace("</", "<\\/")
+    data = spec["data"](content)
+    if spec.get("tv"):
+        data["tvHtml"] = tv_document(spec["tv"])
+    data = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     js = js.replace("</script", "<\\/script")
     return (f'<title>{spec["title"]}</title>\n'
             '<meta name="claude:viewport-fit-sides" content="cover">\n'

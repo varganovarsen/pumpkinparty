@@ -36,6 +36,14 @@ DEFAULTS: dict = {
         "cooldown_seconds": 10,
         "host_can_play": False,
     },
+    "bomb": {
+        "rounds": 3,
+        "start_seconds": 5,
+        "step_seconds": 1,
+        "min_seconds": 2,
+        "points": [500, 400, 300, 200, 100],
+        "host_can_play": True,
+    },
     "head": {
         "mode": "quiet",
         "interval_minutes": 6,

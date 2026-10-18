@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("pumpkin.state")
 
 SCENES = [
-    "ambient", "quiz", "game", "seeds", "timer", "carve_vote", "carve_reveal",
+    "ambient", "quiz", "game", "seeds", "bomb", "timer", "carve_vote", "carve_reveal",
     "rating_reveal", "final_photo", "slideshow", "download",
 ]
 SCENE_TITLES = {
@@ -35,6 +35,7 @@ SCENE_TITLES = {
     "quiz": "Квиз",
     "game": "Падающие тыквы",
     "seeds": "Охота за семечками",
+    "bomb": "Бомба",
     "timer": "Перерыв",
     "carve_vote": "Аллея тыкв",
     "carve_reveal": "Итоги резьбы",
@@ -44,17 +45,17 @@ SCENE_TITLES = {
     "download": "Скачивание фото",
 }
 # Сцены с участием: телефон уходит в полноэкранный режим без вкладок.
-PARTICIPATING = {"quiz", "game", "seeds", "carve_vote"}
+PARTICIPATING = {"quiz", "game", "seeds", "bomb", "carve_vote"}
 # Сцены с живой фазой: уход из них требует подтверждения на /host.
 # Квиз живой только во время вопроса и вердиктов; игра и голосование пока целиком (модули 05/06).
-LIVE = {"game", "seeds", "carve_vote"}
+LIVE = {"game", "seeds", "bomb", "carve_vote"}
 # Рекомендуемый порядок вечера (подсказка «Следующий шаг», SPEC 8).
 RECOMMENDED = [
-    "ambient", "quiz", "timer", "game", "seeds", "carve_vote", "carve_reveal",
+    "ambient", "quiz", "timer", "game", "seeds", "bomb", "carve_vote", "carve_reveal",
     "rating_reveal", "final_photo", "slideshow", "download",
 ]
 
-LEDGER_SOURCES = {"quiz", "quiz_bonus", "game", "seeds", "carve", "manual"}
+LEDGER_SOURCES = {"quiz", "quiz_bonus", "game", "seeds", "bomb", "carve", "manual"}
 
 HEAD_QUIET_SECONDS = 22
 
@@ -112,6 +113,7 @@ class Evening:
         self.data_dir = cfg.data_dir
         self._load()
         # модули сцен импортируются здесь, чтобы не было циклического импорта
+        from .bomb import Bomb
         from .finale import Finale, Timer
         from .game import Game
         from .photos import Photos
@@ -123,12 +125,13 @@ class Evening:
         self.photos = Photos(self)
         self.game = Game(self)
         self.seeds = Seeds(self)
+        self.bomb = Bomb(self)
         self.vote = Vote(self)
         self.timer = Timer(self)
         self.finale = Finale(self)
         # модули с собственным состоянием для клиентов: имя события = имя модуля
-        self.modules = {"quiz": self.quiz, "game": self.game, "seeds": self.seeds, "vote": self.vote,
-                        "timer": self.timer, "finale": self.finale}
+        self.modules = {"quiz": self.quiz, "game": self.game, "seeds": self.seeds, "bomb": self.bomb,
+                        "vote": self.vote, "timer": self.timer, "finale": self.finale}
         self._head_schedule(initial=True)
 
     # ------------------------------------------------------------------ загрузка
@@ -319,6 +322,8 @@ class Evening:
         self.emit({"host", "tv"}, {"t": "players", "players": self.players_public(with_scores=True)})
         self.emit("carve", {"t": "players", "players": self.players_public(with_scores=False)})
         self.emit("player", {"t": "avatars_taken", "taken": self.taken_avatars()})
+        if self.settings["scene"] == "bomb":
+            self.emit_module("bomb")  # круг игроков на ТВ и порядок на /host зависят от того, кто в сети
 
     def players_public(self, with_scores: bool) -> list[dict]:
         totals = self.totals() if with_scores else {}
@@ -365,7 +370,7 @@ class Evening:
         if scene == "rating_reveal" and self.finale.st["step"] < 0:
             self.finale.build_and_save()  # места считаются заново при каждом входе до первого раскрытия
         self.emit({"tv", "host", "player", "carve"}, {"t": "scene", **self.scene_info()})
-        module = {"quiz": "quiz", "game": "game", "seeds": "seeds", "carve_vote": "vote", "carve_reveal": "vote",
+        module = {"quiz": "quiz", "game": "game", "seeds": "seeds", "bomb": "bomb", "carve_vote": "vote", "carve_reveal": "vote",
                   "timer": "timer", "rating_reveal": "finale", "slideshow": "finale",
                   "final_photo": "finale"}.get(scene)
         if module:
@@ -389,6 +394,8 @@ class Evening:
             return self.game.is_live()
         if scene == "seeds":
             return self.seeds.is_live()
+        if scene == "bomb":
+            return self.bomb.is_live()
         if scene == "carve_vote":
             return self.vote.is_live()
         return False
@@ -396,7 +403,8 @@ class Evening:
     def next_step(self) -> dict | None:
         """Контекстная кнопка «Следующий шаг» на /host: {label, cmd, args?, disabled?, hint?}."""
         cur = self.settings["scene"]
-        owner = {"quiz": self.quiz, "game": self.game, "seeds": self.seeds, "carve_vote": self.vote,
+        owner = {"quiz": self.quiz, "game": self.game, "seeds": self.seeds, "bomb": self.bomb,
+                 "carve_vote": self.vote,
                  "carve_reveal": self.vote,
                  "rating_reveal": self.finale}.get(cur)
         if owner:
@@ -441,6 +449,7 @@ class Evening:
         """Таймеры всех модулей (вызывается из app.tick_loop по серверному времени)."""
         # каждый модуль отдельно: сбой одного не должен останавливать остальные таймеры
         for name, fn in (("quiz", self.quiz.tick), ("game", self.game.tick), ("seeds", self.seeds.tick),
+                         ("bomb", self.bomb.tick),
                          ("timer", self.timer.tick),
                          ("photos", self.photos.tick), ("head", self.head_tick)):
             try:
@@ -617,7 +626,7 @@ class Evening:
             shutil.rmtree(self.data_dir / sub, ignore_errors=True)
         self.head_current = None
         self._load()
-        for mod in (self.quiz, self.photos, self.game, self.seeds, self.vote, self.timer, self.finale):
+        for mod in (self.quiz, self.photos, self.game, self.seeds, self.bomb, self.vote, self.timer, self.finale):
             mod.reload()
         self._head_schedule()
         self.log(f"Вечер сброшен, копия: {dest.name}")

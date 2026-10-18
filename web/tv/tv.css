@@ -200,3 +200,51 @@ body { font-size: 2.2vh; }
 @keyframes seeds-rainbow { 0% { opacity: 0; background-position: 0% 50%; } 8% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; background-position: 100% 50%; } }
 .seeds-announce .seed-ic.big { font-size: 10vh; }
 .seeds-announce.rainbow .seed-ic.big { font-size: 18vh; }
+
+/* бомба */
+.bomb-tv { gap: 2.4vh; }
+.bomb-tv.running, .bomb-tv.boom { background: radial-gradient(circle at 50% 45%, #4a1a10, #120a06 70%); }
+.bomb-top { align-self: stretch; display: flex; align-items: center; justify-content: space-between; }
+.bomb-lap { font-size: 2.8vh; padding: .8vh 1.6vw; }
+.bomb-topic-tv { font-size: 6vh; font-weight: 800; color: var(--accent-2); text-align: center; line-height: 1.1; }
+.bomb-topic-tv .lbl { display: block; font-size: 2.4vh; font-weight: 600; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; margin-bottom: .6vh; }
+.bomb-reel-lbl { font-size: 3vh; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; margin-top: 12vh; }
+.bomb-reel { font-size: 11vh; font-weight: 800; text-align: center; line-height: 1.05; max-width: 88vw; color: var(--text); }
+.bomb-reel.flick { animation: bomb-flick .12s ease-out; }
+.bomb-reel.chosen { color: var(--accent-2); animation: pop .7s cubic-bezier(.2,1.4,.4,1); }
+@keyframes bomb-flick { from { transform: translateY(-2vh); opacity: .3; } }
+.bomb-card, .bomb-explode, .bomb-winner { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 4vw; }
+.bomb-avatar { position: relative; width: 40vh; height: 40vh; flex: none; }
+.bomb-avatar img { position: absolute; inset: 7%; width: 86%; height: 86%; border-radius: 50%; object-fit: cover; box-shadow: 0 2vh 6vh #000a; }
+.bomb-fuse-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.bomb-fuse-ring circle { fill: none; stroke-width: 4; }
+.bomb-fuse-ring .track { stroke: #ffffff1a; }
+.bomb-fuse-ring .burn { stroke: var(--accent); stroke-linecap: round; }
+.bomb-card.hot .burn { stroke: var(--fail); }
+.bomb-card.hot .bomb-avatar { animation: bomb-shake .12s linear infinite; }
+.bomb-badge { position: absolute; right: -1vh; bottom: 1vh; font-size: 12vh; line-height: 1; filter: drop-shadow(0 1vh 2vh #000); animation: bomb-swing .6s ease-in-out infinite alternate; transform-origin: 50% 20%; }
+.bomb-info { display: flex; flex-direction: column; gap: 1.5vh; min-width: 0; }
+.bomb-name { font-size: 9vh; font-weight: 800; line-height: 1; max-width: 46vw; overflow-wrap: anywhere; }
+.bomb-secs { font-size: 16vh; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--accent-2); }
+.bomb-card.hot .bomb-secs { color: var(--fail); }
+.bomb-avatar.dead img { filter: grayscale(1) brightness(.6); }
+.bomb-flash { position: absolute; inset: -10%; display: grid; place-items: center; font-size: 34vh; line-height: 1; animation: bomb-blast .9s cubic-bezier(.2,1.4,.4,1) both; }
+.bomb-explode { animation: bomb-shake .1s linear 6; }
+.bomb-out { font-size: 5vh; font-weight: 700; color: var(--fail); }
+.bomb-avatar.win img { box-shadow: 0 0 6vh var(--accent-2); }
+.bomb-crown { position: absolute; left: 50%; top: -9vh; transform: translateX(-50%); font-size: 12vh; }
+.bomb-winner { flex: 0 0 auto; animation: pop .8s ease-out; }
+.bomb-winner .bomb-avatar { width: 26vh; height: 26vh; }
+.bomb-cols { display: flex; gap: 3vw; justify-content: center; width: 100%; min-height: 0; }
+.bomb-results { flex: 0 1 42vw; overflow: hidden; }
+.bomb-ring { display: flex; flex-wrap: wrap; justify-content: center; gap: 1vh 1.2vw; max-width: 92vw; }
+.bomb-chip { position: relative; display: flex; align-items: center; gap: .8vw; background: #ffffff12; border: 2px solid transparent; border-radius: 5vh; padding: .5vh 1.4vw .5vh .5vh; font-size: 2.6vh; font-weight: 700; }
+.bomb-chip .qt-av { width: 5.4vh; height: 5.4vh; }
+.bomb-chip.holder { border-color: var(--accent); background: #e8761a33; transform: scale(1.12); }
+.bomb-chip.out { opacity: .38; filter: grayscale(1); text-decoration: line-through; }
+.bomb-chip.off .nm::after { content: " ⚠"; color: var(--warn); }
+.bomb-chip .pl { font-size: 2vh; background: #0008; border-radius: 2vh; padding: 0 .8vh; text-decoration: none; }
+.bomb-chip .bm { position: absolute; right: -1.2vh; top: -1.8vh; font-size: 4vh; }
+@keyframes bomb-swing { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+@keyframes bomb-shake { 0% { transform: translate(0, 0); } 25% { transform: translate(-.6vh, .4vh); } 50% { transform: translate(.5vh, -.5vh); } 75% { transform: translate(-.4vh, -.3vh); } }
+@keyframes bomb-blast { from { transform: scale(.2); opacity: 0; } 40% { opacity: 1; } to { transform: scale(1); opacity: .95; } }

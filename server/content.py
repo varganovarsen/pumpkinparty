@@ -1,4 +1,4 @@
-"""Чтение контента из content/ (facts.yaml, quiz.yaml) с перечитыванием по mtime."""
+"""Чтение контента из content/ (facts.yaml, quiz.yaml, seeds.yaml, bomb.yaml) с перечитыванием по mtime."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,6 +39,7 @@ class Content:
         self._facts = YamlFile(self.dir / "facts.yaml", [])
         self._quiz = YamlFile(self.dir / "quiz.yaml", {})
         self._seeds = YamlFile(self.dir / "seeds.yaml", [])
+        self._bomb = YamlFile(self.dir / "bomb.yaml", [])
 
     def facts(self) -> list[dict]:
         data = self._facts.get()
@@ -69,4 +70,16 @@ class Content:
                 continue
             seen.add(code)
             out.append({"code": code, "kind": kind, "place": str(s.get("place") or "")})
+        return out
+
+    def bomb_topics(self) -> list[str]:
+        """Темы для «Бомбы»: список строк без повторов."""
+        data = self._bomb.get()
+        if not isinstance(data, list):
+            return []
+        out: list[str] = []
+        for t in data:
+            t = " ".join(str(t or "").split())
+            if t and t not in out:
+                out.append(t)
         return out

@@ -29,3 +29,10 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .sb-foot { margin: 0; font-size: .8rem; color: var(--muted); }
 button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .toast { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+.sb-act { width: auto; min-width: 72px; padding: 0 14px; font-size: 1.05rem; font-weight: 800; background: var(--accent); border-color: var(--accent); color: #1b0e04; }
+.sb-act:disabled { background: var(--panel-2); border-color: var(--line); color: var(--muted); }
+
+/* экран ТВ в песочнице: страница 1280×720 в iframe, вписана в свободное место (на телефоне — поверни горизонтально) */
+.sb-tv { position: fixed; left: 0; right: 0; top: env(safe-area-inset-top, 0px); bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+.sb-tv-frame { flex: none; width: 1280px; height: 720px; border: 0; transform-origin: center; }

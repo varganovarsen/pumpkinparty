@@ -8,6 +8,7 @@ const SCENE_MODULES = {
   quiz: './scenes/quiz.js',
   game: './scenes/game.js',
   seeds: './scenes/seeds.js',
+  bomb: './scenes/bomb.js',
   timer: './scenes/timer.js',
   carve_vote: './scenes/carve_vote.js',
   carve_reveal: './scenes/carve_reveal.js',
@@ -17,7 +18,7 @@ const SCENE_MODULES = {
   download: './scenes/download.js',
 };
 // Модули сцен с состоянием от сервера: снимок и события {t: имя, имя: {...}}.
-const MODULES = ['quiz', 'game', 'seeds', 'vote', 'timer', 'finale'];
+const MODULES = ['quiz', 'game', 'seeds', 'bomb', 'vote', 'timer', 'finale'];
 
 const stage = document.getElementById('stage');
 const overlay = document.getElementById('overlay');
@@ -95,7 +96,7 @@ function onMessage(m) {
       ctx.head = m.head;
       current?.inst.onMessage?.(m);
       break;
-    case 'quiz': case 'game': case 'seeds': case 'vote': case 'timer': case 'finale':
+    case 'quiz': case 'game': case 'seeds': case 'bomb': case 'vote': case 'timer': case 'finale':
       ctx[m.t] = m[m.t];
       current?.inst.onMessage?.(m);
       break;

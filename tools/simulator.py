@@ -10,7 +10,8 @@
   core     — вход, профили, переключение всех сцен, обрывы и возвраты, ручные правки очков,
              перезапуск сервера, сверка очков.
   evening  — весь вечер: core + квиз (4 раунда на тестовом контенте tests/fixtures/content,
-             перезапуск посреди вопроса) + игра (тренировка и зачёт, обрыв посреди игры) + охота за семечками + резьба
+             перезапуск посреди вопроса) + игра (тренировка и зачёт, обрыв посреди игры) + охота за семечками
+             + бомба (три раунда, передачи и взрывы) + резьба
              (тыквы, голосование, итоги) + таймер + общий рейтинг + финальное фото + скачивание.
              Итоговые очки сверяются до единицы.
 """
@@ -34,7 +35,7 @@ import httpx
 import websockets
 
 ROOT = Path(__file__).resolve().parent.parent
-SCENES = ["ambient", "quiz", "game", "seeds", "timer", "carve_vote", "carve_reveal",
+SCENES = ["ambient", "quiz", "game", "seeds", "bomb", "timer", "carve_vote", "carve_reveal",
           "rating_reveal", "final_photo", "slideshow", "download"]
 TEST_CONTENT = ROOT / "tests" / "fixtures" / "content"
 
@@ -122,7 +123,7 @@ class Client:
         self.next_id = 1
         self.connected = asyncio.Event()
         self.quiz: dict | None = None
-        self.state: dict = {}  # последние состояния модулей: game, seeds, vote, timer, finale
+        self.state: dict = {}  # последние состояния модулей: game, seeds, bomb, vote, timer, finale
         self.reconnects = 0
         self.want = True
 
@@ -164,9 +165,9 @@ class Client:
             self.snapshot = m
             self.scene = m["scene"]["scene"]
             self.quiz = m.get("quiz")
-            self.state.update({k: m[k] for k in ("game", "seeds", "vote", "timer", "finale") if k in m})
+            self.state.update({k: m[k] for k in ("game", "seeds", "bomb", "vote", "timer", "finale") if k in m})
             self.connected.set()
-        elif t in ("game", "seeds", "vote", "timer", "finale"):
+        elif t in ("game", "seeds", "bomb", "vote", "timer", "finale"):
             self.state[t] = m[t]
         elif t == "quiz":
             self.quiz = m["quiz"]
@@ -582,6 +583,45 @@ async def scenario_finale(base: str, roster: list, host_player: tuple, expected:
               f"все {len(codes)} семечек засчитаны ровно одному игроку", f"семечки засчитаны неверно: {winners}")
     ok = await wait_for(lambda: (module(host, "seeds") or {}).get("phase") == "finished", 10)
     rep.check(ok, "охота закончилась сама, когда нашли все", "охота не закончилась")
+
+    print("Бомба: три раунда")
+    await host.cmd("set_scene", scene="bomb", force=True)
+    by_pid = {c.pid: c for c in clients}
+
+    def bomb_phase():
+        return (module(host, "bomb") or {}).get("phase")
+
+    for n in range(1, 4):
+        r = await host.cmd("bomb_topic")
+        rep.check(r["ok"], f"бомба: тема раунда {n}", f"бомба: тема раунда {n} не выбрана: {r}")
+        r = await host.cmd("bomb_start")
+        if not r["ok"]:
+            rep.fail(f"бомба: раунд {n} не стартовал: {r}")
+            continue
+        await wait_for(lambda: bomb_phase() == "countdown", 5)
+        seen_turn = None
+        stop_at = asyncio.get_running_loop().time() + 90
+        while bomb_phase() != "round_over" and asyncio.get_running_loop().time() < stop_at:
+            b = module(host, "bomb") or {}
+            h = b.get("holder")
+            if b.get("phase") == "running" and h and b["turn_started_ms"] != seen_turn:
+                seen_turn = b["turn_started_ms"]
+                if rnd.random() < 0.8:  # иногда не успевают — взрыв
+                    r = await by_pid[h["player_id"]].cmd("bomb_pass")
+                    if not r["ok"] and r.get("code") not in ("late", "closed", "not_holder"):
+                        rep.fail(f"бомба: передача отклонена: {r}")
+            await asyncio.sleep(0.01)
+        b = module(host, "bomb") or {}
+        ok = b.get("phase") == "round_over"
+        rep.check(ok, f"бомба: раунд {n} доигран, победитель {b['results'][0]['name'] if ok else '?'}",
+                  f"бомба: раунд {n} не закончился")
+        if ok:
+            for row in b["results"]:
+                expected[row["player_id"]] += row["points"]
+            scored = [row for row in b["results"] if row["points"]]
+            rep.check(len(scored) == min(5, sum(1 for row in b["results"] if row["in_scoring"])),
+                      f"бомба: очки раунда {n} получили {len(scored)} в зачёте", f"бомба: очки раунда {n} неверны: {b['results']}")
+    rep.check(bool((module(host, "bomb") or {}).get("done")), "бомба: три раунда сыграны", "бомба: раунды не закончились")
 
     print("Резьба: тыквы, голосование, итоги")
     with_pumpkin = clients[0:6]  # шестеро сохранили тыквы, включая ведущего вне зачёта

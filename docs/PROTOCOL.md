@@ -52,9 +52,9 @@
 
 | Роль | Дополнительно |
 |---|---|
-| player | `me`, `facts`, `facts_locked`, `avatars_taken`, `quiz/game/seeds/vote/timer/finale` (вид игрока) |
-| tv | `players`, `head`, `stubs` (список путей-заглушек), `client_config`, `quiz/game/seeds/vote/timer/finale` |
-| host | `players`, `log` (50 строк), `scenes`, `next_step`, `tv_count`, `head`, `quiz/game/seeds/vote/timer/finale` (полный вид) |
+| player | `me`, `facts`, `facts_locked`, `avatars_taken`, `quiz/game/seeds/bomb/vote/timer/finale` (вид игрока) |
+| tv | `players`, `head`, `stubs` (список путей-заглушек), `client_config`, `quiz/game/seeds/bomb/vote/timer/finale` |
+| host | `players`, `log` (50 строк), `scenes`, `next_step`, `tv_count`, `head`, `quiz/game/seeds/bomb/vote/timer/finale` (полный вид) |
 | carve | `players` (без очков, с `pumpkin_version`: 0 — тыквы нет) |
 
 `scene = {scene, payload, started_at, participating, title}`.
@@ -103,7 +103,7 @@
 | `me` | конкретный player | `me` |
 | `avatars_taken` | player | `taken` |
 | `facts` | player | `facts`, `locked` |
-| `quiz`, `game`, `seeds`, `vote`, `timer`, `finale` | tv, host, каждый player | состояние модуля для роли (см. ниже) |
+| `quiz`, `game`, `seeds`, `bomb`, `vote`, `timer`, `finale` | tv, host, каждый player | состояние модуля для роли (см. ниже) |
 | `game_live` | tv, host | `board` — живой рейтинг игры, не чаще раза в секунду |
 | `seed_found` | tv, host | `name, avatar_url, kind, points` — плашка находки на ТВ |
 | `photo_added` | tv, host, player | `photo` |
@@ -143,10 +143,14 @@
 | host | `photo_delete` | `id` → файлы в `data/_deleted/` |
 | host | `game_start` | `mode: practice\|scored` (сцена `game`); `game_reset` — аварийный сброс очков игры |
 | host | `seeds_start` (сцена `seeds`), `seeds_time {seconds}` (±, во время охоты), `seeds_stop`, `seeds_reset` (аварийно) | — |
+| host | `bomb_topic` (новый раунд или другая тема до старта), `bomb_start`, `bomb_boom` (взорвать того, у кого бомба) — сцена `bomb`; `bomb_abort` (прервать раунд без очков), `bomb_reset` (аварийно) | — |
+| host | `bomb_order` | `order: [player_id…]` — порядок хода, только между раундами |
+| host | `bomb_timing` | `start_seconds, step_seconds, min_seconds` — время на ход (2-60, 0-10, 1…start) |
 | host | `vote_start`, `vote_close` (сцена `carve_vote`), `vote_reveal` (сцена `carve_reveal`), `vote_reset` (аварийно) | — |
 | host | `timer_set` | `minutes, label?`; `timer_pause {paused}`, `timer_add {seconds}`, `timer_label {label}` |
 | host | `rating_next`, `rating_restart` (сцена `rating_reveal`), `slideshow_pause {paused}` | — |
 | player | `game_progress` | `score` — живой счёт; `game_result {caught: [i…]}` → `{score}` (сервер пересчитывает по расписанию) |
+| player | `bomb_pass` | — → `{to}`; ошибки `not_holder`, `late`, `closed` |
 | player | `seeds_enter` | `code` → `{kind, points}`; ошибки `wrong` (+`until_ms` при паузе), `cooldown {until_ms}`, `taken`, `mine`, `host`, `not_started`, `closed` |
 | player | `vote` | `n` (номер тыквы) или `null` — воздержаться; свою нельзя (`own`) |
 | player | `quiz_answer` | `qid, choice (0-3)` или `qid, text` → ошибки `closed`, `late`, `already`, `bad_answer` |
@@ -166,6 +170,16 @@ counts: {kind: {total, found}}, board: [{player_id, name, avatar_url, in_scoring
 Игроку: `my = {can_play, count, points, kinds, cooldown_until_ms}`. Ведущему: `seeds: [{code, kind, place, found_by}]`, `next`.
 Страница `GET /seeds/print` — лист для печати (коды видны, ссылка только в `/host`).
 
+### Бомба (`bomb`)
+
+`{phase: idle|topic|countdown|running|boom|round_over, round, rounds, done, topic, topic_reveal_at_ms, start_at_ms,
+deadline_ms, turn_started_ms, turn_seconds, resume_at_ms, lap (с 1), passes, alive_count,
+holder, next_holder, boom: {…, place} | null, players: [{player_id, name, avatar_url, in_scoring, alive, place, connected}],
+results: [{player_id, name, avatar_url, in_scoring, place, points}] (в round_over), totals: [{…, points}],
+timing: {start_seconds, step_seconds, min_seconds}, points: [500, …]}`. `holder`, `next_holder` — `{player_id, name, avatar_url, in_scoring}`.
+`players` — круг в порядке хода (до старта — кто сыграет). ТВ в фазе `topic`: `reel` — темы для рулетки.
+Игроку: `my = {player_id, can_play, in_round, alive, holder, place, points}`. Ведущему: `order: [{player_id, name, connected, can_play}]`, `next`.
+
 ### Голосование и итоги резьбы (`vote`)
 
 `{phase: idle|open|closed, entries: [{n, shots: {lit, dark, side}, masks? (tv/host)}], voted_count, voters_total,
@@ -175,5 +189,5 @@ reveal_step, revealed}`. Игроку: `my = {own, vote, abstained}`. После
 ### Таймер (`timer`) и финал (`finale`)
 
 `timer = {label, running, finished, end_at_ms, left_ms}` (`left_ms` — на паузе).
-`finale = {step, groups_total, groups: [[{player_id, name, avatar_url, total, place, breakdown: {quiz, game, seeds, carve, manual}}]],
+`finale = {step, groups_total, groups: [[{player_id, name, avatar_url, total, place, breakdown: {quiz, game, seeds, bomb, carve, manual}}]],
 slideshow_paused, final_photo}`: группы от последнего места к первому, ничьи в одной группе; не ведущему — только раскрытые.

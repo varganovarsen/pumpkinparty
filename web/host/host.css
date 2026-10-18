@@ -58,3 +58,7 @@ details > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 .seeds-codes td { padding: 3px 6px; border-bottom: 1px solid var(--line); }
 .seeds-codes td.code { font-family: ui-monospace, monospace; font-weight: 700; }
 .seeds-codes tr.found { opacity: .45; }
+.bomb-order { margin: 6px 0; padding-left: 22px; }
+.bomb-order li { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+.bomb-order li.off { opacity: .5; }
+.bomb-order li .grow { flex: 1; }

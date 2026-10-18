@@ -488,3 +488,149 @@ def test_seeds_wrong_codes_cooldown_and_finish(data_dir):
         assert ev.seeds.phase == "idle" and "seeds" not in ev.breakdown(a["me"]["id"])
         page = c.get("/seeds/print").text
         assert "7364" in page and "Шпаргалка" in page
+
+
+# ---------------------------------------------------------------------- бомба
+def _bomb_go(ev):
+    """Отсчёт или пауза после взрыва прошли: следующий ход."""
+    st = ev.bomb.st
+    if st["phase"] == "countdown":
+        st["start_at"] = ev.clock.now() - 1
+    elif st["phase"] == "boom":
+        st["resume_at"] = ev.clock.now() - 1
+    ev.bomb.tick()
+    assert ev.bomb.phase == "running"
+
+
+def _bomb_timeout(ev):
+    ev.bomb.st["deadline"] = ev.clock.now() - 0.01
+    ev.bomb.tick()
+
+
+def test_bomb_round_passes_explosions_and_points(data_dir):
+    with client(data_dir, tv_localhost_only=False) as c:
+        ev = c.app.state.ev
+        a, b, v = join(c, "Аня", "pumpkin-1"), join(c, "Боря", "pumpkin-2"), join(c, "Вика", "pumpkin-3")
+        ids = {r["me"]["name"]: r["me"]["id"] for r in (a, b, v)}
+        with c.websocket_connect("/ws?role=host") as h, \
+                c.websocket_connect(f"/ws?role=player&token={a['token']}") as wa, \
+                c.websocket_connect(f"/ws?role=player&token={b['token']}") as wb, \
+                c.websocket_connect(f"/ws?role=player&token={v['token']}") as wv:
+            for ws in (h, wa, wb, wv):
+                recv_until(ws, "snapshot")
+            assert cmd(h, "bomb_topic")["code"] == "wrong_scene"
+            assert cmd(h, "set_scene", scene="bomb")["ok"]
+            assert ev.next_step()["cmd"] == "bomb_topic"
+            assert cmd(h, "bomb_start")["code"] == "no_topic"
+            assert cmd(h, "bomb_topic")["ok"]
+            st = ev.bomb.public("player", ids["Аня"])
+            assert st["phase"] == "topic" and st["round"] == 1 and st["topic"]
+            assert [p["name"] for p in st["players"]] == ["Аня", "Боря", "Вика"] and st["my"]["in_round"]
+            assert cmd(h, "bomb_start")["ok"]
+            assert ev.scene_is_live("bomb")
+            _bomb_go(ev)
+            assert ev.bomb.st["holder"] == ids["Аня"] and ev.bomb.st["turn_seconds"] == 5
+            assert cmd(wb, "bomb_pass")["code"] == "not_holder"
+            r = cmd(wa, "bomb_pass")
+            assert r["ok"] and r["to"] == ids["Боря"]
+            assert cmd(wa, "bomb_pass")["code"] == "not_holder"  # двойное нажатие не уводит бомбу дальше
+            assert cmd(wb, "bomb_pass")["to"] == ids["Вика"]
+            assert cmd(wv, "bomb_pass")["to"] == ids["Аня"]
+            assert ev.bomb.st["turn_seconds"] == 4  # второй круг на секунду короче
+            ev.bomb.st["deadline"] = ev.clock.now() - 0.01
+            assert cmd(wa, "bomb_pass")["code"] == "late"
+            ev.bomb.tick()
+            assert ev.bomb.phase == "boom" and ev.bomb.st["boom"]["place"] == 3
+            assert ev.bomb.public("player", ids["Аня"])["my"] == {
+                "player_id": ids["Аня"], "can_play": True, "in_round": True, "alive": False, "holder": False, "place": 3, "points": 0}
+            _bomb_go(ev)
+            assert ev.bomb.st["holder"] == ids["Боря"]  # бомба у следующего за взорвавшимся
+            assert cmd(h, "bomb_boom")["ok"]  # ведущий взрывает вручную (повтор слова)
+            assert ev.bomb.phase == "round_over" and not ev.scene_is_live("bomb")
+            res = ev.bomb.public("tv")["results"]
+            assert [(r["name"], r["place"], r["points"]) for r in res] == [
+                ("Вика", 1, 500), ("Боря", 2, 400), ("Аня", 3, 300)]
+            assert ev.next_step()["cmd"] == "bomb_topic"
+        assert ev.breakdown(ids["Вика"])["bomb"] == 500
+        grp = [r for g in ev.finale.build_groups() for r in g]
+        assert next(r for r in grp if r["name"] == "Боря")["breakdown"]["bomb"] == 400
+
+
+def test_bomb_rounds_timing_order_host_and_reset(data_dir):
+    with client(data_dir, tv_localhost_only=False) as c:
+        ev = c.app.state.ev
+        a, b = join(c, "Аня", "pumpkin-1"), join(c, "Боря", "pumpkin-2")
+        host = ev.join("Ведущий", "pumpkin", "pumpkin-3", as_host=True)  # вне зачёта, но играет
+        for p in ev.players.values():
+            p.connections = 1
+        aid, bid = a["me"]["id"], b["me"]["id"]
+        ev.set_scene("bomb")
+        for bad in ((1, 1, 1), (5, -1, 2), (5, 1, 6), ("x", 1, 1)):
+            with pytest.raises(CmdError):
+                ev.bomb.set_timing(*bad)
+        ev.bomb.set_timing(3, 2, 1)
+        with pytest.raises(CmdError):
+            ev.bomb.set_order([aid, aid])
+        ev.bomb.set_order([host.id, bid, aid])
+        ev.bomb.pick_topic()
+        first = ev.bomb.st["topic"]
+        ev.bomb.pick_topic()  # «другая тема» того же раунда
+        assert ev.bomb.st["round"] == 1 and ev.bomb.st["topic"] != first
+        ev.bomb.start()
+        _bomb_go(ev)
+        assert ev.bomb.st["holder"] == host.id and ev.bomb.st["turn_seconds"] == 3
+        with pytest.raises(CmdError):
+            ev.bomb.set_order([aid, bid, host.id])  # во время раунда порядок не меняется
+        for pid in (host.id, bid, aid):
+            ev.bomb.pass_bomb(pid)
+        assert ev.bomb.st["turn_seconds"] == 1  # 3 − 2, не меньше минимума
+        ev.bomb.pass_bomb(host.id)
+        ev.bomb.pass_bomb(bid)
+        _bomb_timeout(ev)  # Аня
+        _bomb_go(ev)
+        assert ev.bomb.st["holder"] == host.id
+        _bomb_timeout(ev)  # ведущий, Боря выиграл
+        assert ev.bomb.phase == "round_over"
+        rows = ev.bomb.st["results"]["1"]
+        # ведущий вне зачёта занял 2 место, но очки за 2 место ушли следующему в зачёте
+        assert [(r["player_id"], r["place"], r["points"]) for r in rows] == [
+            (bid, 1, 500), (host.id, 2, 0), (aid, 3, 400)]
+        # раунды 2 и 3; начинает следующий по кругу
+        for rnd in (2, 3):
+            ev.bomb.pick_topic()
+            ev.bomb.start()
+            _bomb_go(ev)
+            assert ev.bomb.st["holder"] == [host.id, bid, aid][rnd - 1]
+            while ev.bomb.phase != "round_over":
+                if ev.bomb.phase == "boom":
+                    _bomb_go(ev)
+                _bomb_timeout(ev)
+        assert ev.bomb.done() and ev.next_step()["cmd"] == "set_scene"
+        assert len(set(ev.bomb.st["topics_used"])) == 3
+        with pytest.raises(CmdError) as e:
+            ev.bomb.pick_topic()
+        assert e.value.code == "done"
+        total = ev.breakdown(aid)["bomb"] + ev.breakdown(bid)["bomb"]
+        assert total == 3 * (500 + 400) and "bomb" not in ev.breakdown(host.id)
+        ev.bomb.reset()
+        assert ev.bomb.phase == "idle" and "bomb" not in ev.breakdown(aid)
+        assert ev.bomb.timing()["start_seconds"] == 3  # настройки ведущего переживают сброс
+
+
+def test_bomb_needs_two_players_and_aborts_when_scene_left(data_dir):
+    with client(data_dir, tv_localhost_only=False) as c:
+        ev = c.app.state.ev
+        a, b = join(c, "Аня", "pumpkin-1"), join(c, "Боря", "pumpkin-2")
+        ev.set_scene("bomb")
+        ev.bomb.pick_topic()
+        with pytest.raises(CmdError) as e:
+            ev.bomb.start()  # никого нет в сети
+        assert e.value.code == "few_players"
+        for p in ev.players.values():
+            p.connections = 1
+        ev.bomb.start()
+        _bomb_go(ev)
+        ev.set_scene("ambient", force=True)
+        ev.bomb.tick()
+        assert ev.bomb.phase == "topic" and ev.bomb.st["round"] == 1 and not ev.bomb.st["topics_used"]
+        assert "bomb" not in ev.breakdown(a["me"]["id"]) and "bomb" not in ev.breakdown(b["me"]["id"])
