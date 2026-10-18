@@ -1,0 +1,31 @@
+/* Пульт песочницы поверх настоящего экрана игрока. Цвета — токены ui.css. */
+[hidden] { display: none !important; }
+#app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.topbar { top: env(safe-area-inset-top, 0px); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 11; background: var(--bg); }
+
+.sb-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; gap: 8px; align-items: stretch;
+  padding: 8px max(12px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  background: var(--panel); border-top: 1px dashed var(--accent);
+}
+.sb-bar button { min-height: 52px; }
+.sb-nav { flex: none; width: 56px; font-size: 1.8rem; line-height: 1; padding: 0; }
+.sb-label { flex: 1; min-width: 0; font-weight: 700; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-variant-numeric: tabular-nums; }
+.sb-hint { font-size: .72rem; font-weight: 400; color: var(--muted); letter-spacing: .04em; }
+
+.sb-sheet {
+  position: fixed; left: 0; right: 0; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); z-index: 39;
+  max-height: 62dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  padding: 14px max(16px, env(safe-area-inset-right, 0px)) 14px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--panel-2); border-top: 1px solid var(--line); box-shadow: 0 -12px 30px #0008;
+}
+.sb-field { display: flex; flex-direction: column; gap: 6px; }
+.sb-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sb-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.sb-seg button, .sb-row button { min-height: 40px; padding: .4em .8em; font-size: .92rem; }
+.sb-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sb-row button { flex: 1; }
+.sb-foot { margin: 0; font-size: .8rem; color: var(--muted); }
+button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.toast { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
